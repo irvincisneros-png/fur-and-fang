@@ -6,6 +6,11 @@ import { History, composition } from './history.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
+// Stream centre line: duplicated from src/render/terrain.js (streamX, STREAM_W); keep in sync. Rabbits stay off the water.
+const streamX = (z) => -9 + 15 * Math.sin(z * 0.043 + 0.9) + 5 * Math.sin(z * 0.11 + 2.0);
+const STREAM_W = 3.5, BANK = 2.5;
+const inWater = (x, z) => Math.abs(x - streamX(z)) < STREAM_W + BANK;
+const CELL = 6;
 const dist2 = (ax, az, bx, bz) => (ax - bx) * (ax - bx) + (az - bz) * (az - bz);
 
 export class Simulation {
@@ -33,8 +38,11 @@ export class Simulation {
     this.burrows = [];
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2 + this.mrng.range(-0.3, 0.3), r = this.mrng.range(14, 38);
-      this.burrows.push({ x: Math.cos(a) * r, z: Math.sin(a) * r });
+      let b = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+      for (let k = 0; k < 20 && inWater(b.x, b.z); k++) { const r2 = this.mrng.range(14, 38), a2 = this.mrng.range(0, Math.PI * 2); b = { x: Math.cos(a2) * r2, z: Math.sin(a2) * r2 }; }
+      this.burrows.push(b);
     }
+    this.density = new Map(); this.densityT = -9;
 
     const founders = opts.founders;
     const n = founders ? founders.length : opts.startPop ?? (survive ? P.SURVIVE_START_POP : P.EXPLORE_START_POP);
@@ -302,6 +310,10 @@ export class Simulation {
     const m = this.mrng, preds = this.predators;
     const clovers = this.patches.filter((p) => p.type === 'clover'), shelters = this.patches.filter((p) => p.type === 'shelter');
     let anyDead = false;
+    if (this.t - this.densityT > 1) {
+      this.densityT = this.t; this.density.clear();
+      for (const q of this.rabbits) if (q.alive) { const k = Math.floor(q.x / CELL) * 1000 + Math.floor(q.z / CELL); this.density.set(k, (this.density.get(k) || 0) + 1); }
+    }
     for (const pr of preds) {
       if (pr.state === 'pounce') { pr.pounceT -= h; if (pr.pounceT <= 0) { pr.state = 'idle'; pr.wait = 1; } continue; }
       if (pr.state === 'chase') {
@@ -347,8 +359,16 @@ export class Simulation {
             const c = clovers[m.int(clovers.length)], a = m.range(0, Math.PI * 2), rr = Math.sqrt(m.next()) * c.radius * 0.8;
             r.tx = c.x + Math.cos(a) * rr; r.tz = c.z + Math.sin(a) * rr;
           } else {
-            const b = this.burrows[r.home], a = m.range(0, Math.PI * 2), rr = Math.sqrt(m.next()) * 12;
-            r.tx = b.x + Math.cos(a) * rr; r.tz = b.z + Math.sin(a) * rr;
+            if (m.next() < 0.2) r.home = m.int(this.burrows.length); // drift between burrows so the warren spreads out
+            const b = this.burrows[r.home];
+            let bx = b.x, bz = b.z, bestC = Infinity;
+            for (let k = 0; k < 4; k++) {   // mild separation: of a few candidate spots, take the least crowded dry one
+              const a = m.range(0, Math.PI * 2), rr = Math.sqrt(m.next()) * 20;
+              const cx = clamp(b.x + Math.cos(a) * rr, -P.ROAM, P.ROAM), cz = clamp(b.z + Math.sin(a) * rr, -P.ROAM, P.ROAM);
+              const c = (inWater(cx, cz) ? 1e6 : 0) + (this.density.get(Math.floor(cx / CELL) * 1000 + Math.floor(cz / CELL)) || 0) + m.next() * 0.5;
+              if (c < bestC) { bestC = c; bx = cx; bz = cz; }
+            }
+            r.tx = bx; r.tz = bz;
           }
           r.state = 'hop';
         }
@@ -361,5 +381,7 @@ export class Simulation {
     r.x += dx; r.z += dz;
     const d = Math.hypot(r.x, r.z);
     if (d > P.ROAM) { r.x *= P.ROAM / d; r.z *= P.ROAM / d; }
+    const sx = streamX(r.z), off = r.x - sx, lim = STREAM_W + 1;
+    if (Math.abs(off) < lim) r.x = sx + (off < 0 ? -lim : lim); // keep out of the water
   }
 }

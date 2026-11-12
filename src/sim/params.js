@@ -31,7 +31,7 @@ export const P = {
 
   // Mutation
   MUT_SURVIVE: 0.002,
-  MUT_EXPLORE: 0.01,
+  MUT_EXPLORE: 0.003,
 
   // Movement (cosmetic; the sim owns positions)
   HOP_SPEED: 2.2, FLEE_SPEED: 6, FLEE_R_SHORT: 11, FLEE_R_LONG: 16,

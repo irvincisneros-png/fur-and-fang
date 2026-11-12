@@ -4,6 +4,7 @@ import { GraphPanel, TABS, POP_MODES } from './graphs.js';
 import { buildExplore } from './explore.js';
 import { buildSurvive, updateForecast, showEnd } from './survive.js';
 import { P } from '../sim/params.js';
+import { alleleFreq } from '../sim/history.js';
 import { GENE_INFO, genotypeLabel, ALLELE_TRAIT } from '../sim/genetics.js';
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -103,19 +104,21 @@ export class UI {
   }
 
   onEvents(events) {
-    let muts = 0;
+    let muts = 0, shown = 0, comp = null;
     for (const e of events) {
       if (e.type === 'mutation') {
+        if (e.planted) { this.toast(`Teacher mutation: kit #${e.id} carries allele ${e.allele} (${ALLELE_TRAIT[e.allele]})`, 'mut'); continue; }
         muts++;
-        if (muts === 1) {
-          const trait = ALLELE_TRAIT[e.allele], mutant = ['b', 'e', 'T'].includes(e.allele);
-          this.toast(e.planted ? `Teacher mutation: kit #${e.id} carries allele ${e.allele} (${trait})` : mutant ? `Random mutation: kit #${e.id} carries a new allele ${e.allele} (${trait})` : `Random mutation: kit #${e.id} gets the original allele ${e.allele} (${trait}) back`, 'mut');
-        }
+        // only toast a mutation that creates a mutant allele that is absent or rare (<5 %); back-mutations are not toasted
+        if (shown || !['b', 'e', 'T'].includes(e.allele)) continue;
+        comp = comp || this.app.sim.composition();
+        if (alleleFreq(comp, e.allele) < 0.05) { shown++; this.toast(`Random mutation: kit #${e.id} carries a new allele ${e.allele} (${ALLELE_TRAIT[e.allele]})`, 'mut'); }
       } else if (e.type === 'extinct') this.toast('The last rabbit is gone. The warren is extinct.', 'bad', 12000);
       else if (e.type === 'bottleneck') this.toast(`Bottleneck: ${e.removed} rabbits removed at random. Chance, not fitness, decided who stayed.`, 'bad');
       else if (e.type === 'fence') this.toast('Fox fence is up.', 'info');
     }
-    if (muts > 1) this.toast(`...and ${muts - 1} more random mutation${muts > 2 ? 's' : ''} this generation`, 'mut');
+    const others = muts - shown;
+    if (others > 0) this.toast(`+${others} other random mutation${others > 1 ? 's' : ''}`, 'mut small', 3000);
   }
 
   // ---------- world clicks ----------

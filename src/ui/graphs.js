@@ -103,22 +103,23 @@ function hoverMark(ctx, f, history, gen, dots) {
 // Stacked horizontal bars: deaths by cause per window (end screen).
 export function drawDeathBars(canvas, rows) {
   const { ctx, w, h } = prep(canvas);
-  const labelW = Math.min(150, w * 0.32), padR = 40, top = 6, rowH = Math.max(18, Math.min(30, (h - top - 26) / Math.max(1, rows.length)));
-  const max = Math.max(1, ...rows.map((r) => CAUSES.reduce((s, c) => s + (r.deaths[c] || 0), 0)));
-  ctx.font = FONT; ctx.textBaseline = 'middle';
+  ctx.font = FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const labelW = Math.min(150, w * 0.32), padR = 40;
+  let lx = labelW, ly = 10;
+  const items = CAUSES.filter((c) => rows.some((r) => r.deaths[c]));
+  for (const c of (items.length ? items : CAUSES)) {
+    const tw = ctx.measureText(CAUSE_LABEL[c]).width + 26;
+    if (lx + tw > w && lx > labelW) { lx = labelW; ly += 16; }
+    ctx.fillStyle = COLORS[c]; ctx.fillRect(lx, ly - 5, 11, 11); ctx.fillStyle = COLORS.ink; ctx.fillText(CAUSE_LABEL[c], lx + 16, ly + 1); lx += tw;
+  }
+  ctx.fillStyle = COLORS.ink; ctx.fillText('Bars show each cause as a share of that event\u2019s deaths; the number is the total', 4, ly + 20);
+  const top = ly + 34, rowH = Math.max(18, Math.min(30, (h - top - 6) / Math.max(1, rows.length)));
   rows.forEach((r, i) => {
     const y = top + i * rowH; let x = labelW; const tot = CAUSES.reduce((s, c) => s + (r.deaths[c] || 0), 0);
     ctx.fillStyle = COLORS.ink; ctx.textAlign = 'right'; ctx.fillText(r.label, labelW - 8, y + rowH / 2, labelW - 10);
-    for (const c of CAUSES) { const v = r.deaths[c] || 0; if (!v) continue; const bw = (v / max) * (w - labelW - padR); ctx.fillStyle = COLORS[c]; ctx.fillRect(x, y + 3, bw, rowH - 6); x += bw; }
-    ctx.fillStyle = COLORS.ink; ctx.textAlign = 'left'; ctx.fillText(String(tot), x + 5, y + rowH / 2);
+    for (const c of CAUSES) { const v = r.deaths[c] || 0; if (!v) continue; const bw = (v / tot) * (w - labelW - padR); ctx.fillStyle = COLORS[c]; ctx.fillRect(x, y + 3, bw, rowH - 6); x += bw; }
+    ctx.fillStyle = COLORS.ink; ctx.textAlign = 'left'; ctx.fillText(tot ? 'n=' + tot : '0', x + 5, y + rowH / 2);
   });
-  let lx = labelW, ly = top + rows.length * rowH + 10;
-  ctx.textAlign = 'left';
-  for (const c of CAUSES) {
-    const tw = ctx.measureText(CAUSE_LABEL[c]).width + 26;
-    if (lx + tw > w) { lx = labelW; ly += 16; }
-    ctx.fillStyle = COLORS[c]; ctx.fillRect(lx, ly - 5, 11, 11); ctx.fillStyle = COLORS.ink; ctx.fillText(CAUSE_LABEL[c], lx + 16, ly + 1); lx += tw;
-  }
 }
 
 export class GraphPanel {
