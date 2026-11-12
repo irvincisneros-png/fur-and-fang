@@ -15,7 +15,7 @@ export function buildSurvive(root, ctx) {
 
   const srcBtns = SRC_ORDER.map((id) => {
     const s = P.SOURCES[id];
-    const btn = h('button', { class: 'source', onclick: () => run(ch().translocate(id), `Two rabbits arrive from ${s.name}.`) },
+    const btn = h('button', { class: 'source', onclick: () => run(ch().translocate(id), null) },
       h('b', { text: s.name }), h('small', { text: s.blurb }),
       FREQ_ROWS.map(([al, lbl, col]) => h('div', { class: 'abar' }, h('span', { text: lbl }), h('i', { style: { '--w': Math.round(s.freq[al] * 100) + '%', '--c': col } }), h('span', { text: Math.round(s.freq[al] * 100) + '%' }))));
     btn.dataset.src = id; return btn;
@@ -23,10 +23,11 @@ export function buildSurvive(root, ctx) {
   els.translocate = h('div', { class: 'action' }, h('b', { text: 'Translocate' }), h('span', { class: 'cost', text: `${P.COST.translocate} trust` }),
     h('span', { class: 'desc', text: 'Bring 2 adult rabbits from a neighbouring population. This is gene flow: new alleles enter. Each card shows how common the new alleles are there.' }),
     h('div', { class: 'sources' }, srcBtns), h('span', { class: 'cd', id: 'cd-translocate' }));
+  els.translocate.dataset.act = 'translocate';
   const placeAction = (type, title, desc) => {
     const btn = h('button', { class: 'btn small', text: 'Place on the ground', onclick: () => ui.beginPlace(type) });
     const box = h('div', { class: 'action' }, h('b', { text: title }), h('span', { class: 'cost', text: `${P.COST[type]} trust` }), h('span', { class: 'desc', text: desc }), btn, h('span', { class: 'cd' }));
-    box.btn = btn; box.cd = box.querySelector('.cd'); return box;
+    box.btn = btn; box.cd = box.querySelector('.cd'); box.dataset.act = type; return box;
   };
   els.clover = placeAction('clover', 'Plant clover patch', `Extra food for ${P.CLOVER_GENS} generations. Click the ground to place it. Takes effect next generation.`);
   els.shelter = placeAction('shelter', 'Brush shelter', `A hedge pile: rabbits near it face 30% fewer predator catches for ${P.SHELTER_GENS} generations.`);
@@ -40,13 +41,13 @@ export function buildSurvive(root, ctx) {
 
   root.append(
     h('h3', { text: 'You are the ranger' }),
-    h('p', { class: 'note', text: 'You cannot choose mutations. Habitat and gene flow are your tools. Trust grows by 1 every generation, more when the warren is genetically varied. Read the forecast: variation has to exist before the pressure arrives.' }),
+    h('p', { class: 'note', text: 'You cannot choose mutations. Habitat and gene flow are your tools, and each costs trust. Read the forecast: variation has to exist before the pressure arrives.' }),
     els.translocate, els.clover, els.shelter, els.fence,
     h('div', { class: 'row' }, gv, h('label', { for: 'gv2', text: 'Genotype view' })),
-    h('div', { class: 'btn-row' }, h('button', { class: 'btn small', text: 'Restart this seed', onclick: () => app.start('survive', app.sim.seedCode) }), h('button', { class: 'btn small', text: 'New seed', onclick: () => app.start('survive', null) })));
+    h('div', { class: 'btn-row' }, h('button', { class: 'btn small', text: 'Show the tips again', onclick: () => { ui.coach.start(true); } }), h('button', { class: 'btn small', text: 'Restart this seed', onclick: () => app.start('survive', app.sim.seedCode) }), h('button', { class: 'btn small', text: 'New seed', onclick: () => app.start('survive', null) })));
 
   function run(res, okMsg) {
-    if (res.ok) ui.toast(okMsg, 'good'); else ui.toast(res.reason, 'bad');
+    if (!res.ok) ui.toast(res.reason, 'bad'); else if (okMsg) ui.toast(okMsg, 'good');   // translocation announces itself when the rabbits appear
     ui.refresh(true);
   }
 

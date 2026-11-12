@@ -53,7 +53,7 @@
       <button class="btn small" id="btn-home" title="Back to the title screen">Menu</button>
       <div class="stat"><span class="lbl" id="clock-lbl">Time</span><b id="clock">0:00</b></div>
       <div class="stat"><span class="lbl">Generation</span><b id="gen">0</b></div>
-      <div class="stat"><span class="lbl">Rabbits</span><b id="pop">2</b></div>
+      <div class="stat" id="pop-box"><span class="lbl">Rabbits</span><b id="pop">2</b></div>
       <div class="stat survive-only hidden" id="trust-box"><span class="lbl">Trust</span><b id="trust">12</b></div>
       <div class="spacer"></div>
       <div class="seg explore-only" id="speed" role="group" aria-label="Speed">
@@ -74,7 +74,18 @@
     </aside>
 
     <div id="place-banner" class="hidden"><span id="place-text"></span> <button class="btn small" id="place-cancel">Cancel</button></div>
+    <div id="extinct-banner" class="hidden" role="alert"><b>The warren has died out.</b> <span>With no rabbits left there is nothing for selection to act on.</span>
+      <button class="btn small primary" id="extinct-restart">Start again</button> <button class="btn small" id="extinct-new">New seed</button></div>
+    <div id="event-banner" class="hidden" role="status" aria-live="assertive"></div>
+    <div id="flash" aria-hidden="true"></div>
     <div id="toasts" aria-live="polite"></div>
+    <div id="dock">
+      <button class="btn small" id="btn-follow" title="Lock the camera to one rabbit">Follow a rabbit</button>
+      <span id="follow-hint" class="dock-hint">or click one</span>
+      <span id="follow-info" class="hidden"><span id="follow-text"></span>
+        <button class="btn small" id="follow-next">Another</button>
+        <button class="btn small" id="follow-release">Release <kbd>Esc</kbd></button></span>
+    </div>
     <button id="seed-badge" title="Seed code. Click to copy.">Seed</button>
     <div id="paused-badge" class="hidden">Paused (Space to resume)</div>
 

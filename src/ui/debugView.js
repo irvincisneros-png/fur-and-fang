@@ -1,4 +1,5 @@
 // Fallback top-down 2D renderer. Same API as the 3D world, so the app is fully playable without it.
+import { streamX } from '../sim/valley.js';
 const HALF = 60;
 const lerp = (a, b, t) => a + (b - a) * t;
 const mix = (c1, c2, t) => c1.map((v, i) => Math.round(lerp(v, c2[i], t)));
@@ -30,7 +31,7 @@ export function createDebugView(canvas) {
     if (e.temp < -0.2) { ctx.fillStyle = `rgba(120,160,220,${Math.min(0.25, -e.temp * 0.25)})`; ctx.fill(); }
     if (e.temp > 0.4) { ctx.fillStyle = `rgba(255,170,60,${(e.temp - 0.4) * 0.35})`; ctx.fill(); }
     // stream
-    ctx.strokeStyle = 'rgba(90,140,190,0.6)'; ctx.lineWidth = 7 * scale / 3; ctx.beginPath(); ctx.moveTo(sx(-55), sz(8)); ctx.bezierCurveTo(sx(-20), sz(-6), sx(10), sz(24), sx(55), sz(6)); ctx.stroke();
+    ctx.strokeStyle = 'rgba(90,140,190,0.6)'; ctx.lineWidth = 7 * scale / 3; ctx.beginPath(); for (let z = -58; z <= 58; z += 4) { const x = streamX(z); if (Math.hypot(x, z) > HALF) continue; ctx.lineTo(sx(x), sz(z)); } ctx.stroke();
     for (const b of sim.burrows) { ctx.fillStyle = '#6a4a2e'; ctx.beginPath(); ctx.ellipse(sx(b.x), sz(b.z), 2.6 * scale, 1.9 * scale, 0, 0, 7); ctx.fill(); }
     for (const p of sim.patches) {
       ctx.beginPath(); ctx.arc(sx(p.x), sz(p.z), p.radius * scale, 0, 7);

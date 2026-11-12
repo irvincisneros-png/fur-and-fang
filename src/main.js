@@ -40,7 +40,7 @@ function ensureWorld() {
     if (params.get('view') === '2d') return useDebugView('requested');
     try {
       const mod = await import('./render/world.js');
-      const w = await mod.createWorld($('#gl'), { quality: params.get('quality') || 'high' });
+      const w = await mod.createWorld($('#gl'), { quality: params.get('quality') || 'auto' });
       app.world = w; $('#dbg').classList.add('hidden');
       return w;
     } catch (err) {
@@ -53,7 +53,7 @@ function ensureWorld() {
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const raw = (now - last) / 1000, dt = Math.min(0.1, raw); last = now;
   const { sim, world } = app;
   if (!sim || !world || $('#app').classList.contains('hidden')) return;
   const simDt = app.paused || sim.ended ? 0 : dt * (app.mode === 'survive' ? 1 : app.speed);
@@ -62,7 +62,7 @@ function frame(now) {
   if (events.length) app.ui.onEvents(events);
   try {
     if (events.length) world.onEvents(events);
-    world.update(sim, simDt);
+    world.update(sim, simDt, raw);
   } catch (err) {
     if (world.kind === 'debug') { if (!app._dbgErr) { app._dbgErr = true; console.error('2D view error', err); } return; }
     console.error('Renderer failed, switching to the 2D view', err);

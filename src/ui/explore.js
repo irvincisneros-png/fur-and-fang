@@ -18,27 +18,39 @@ export function buildExplore(root, ctx) {
   root.innerHTML = '';
 
   const setEnv = (p) => { sim().setEnv(p); };
-  const applyPredators = () => sim().setPredators(predOn ? predCount : 0);
+  const foxState = h('span', { class: 'state' });
+  let activePreset = null;
+  const presetBtns = {};
+  const markPreset = (id) => { activePreset = id; for (const k in presetBtns) presetBtns[k].classList.toggle('on', k === id); };
+  const syncFox = () => { foxState.textContent = predOn ? `${predCount} fox${predCount > 1 ? 'es' : ''} hunting` : 'no foxes'; predSlider.classList.toggle('off', !predOn); };
+  const applyPredators = () => { sim().setPredators(predOn ? predCount : 0); syncFox(); };
 
   // ----- Valley -----
-  sliders.snow = slider({ label: 'Snow cover', min: 0, max: 1, step: 0.01, value: sim().env.snow, fmt: (v) => Math.round(v * 100) + '%', onInput: (v) => setEnv({ snow: v }) });
-  sliders.temp = slider({ label: 'Temperature', min: -1, max: 1, step: 0.01, value: sim().env.temp, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)} ${tempWord(v)}`, onInput: (v) => setEnv({ temp: v }) });
-  sliders.food = slider({ label: 'Food (rabbits supported)', min: 10, max: 600, step: 5, value: sim().env.food, fmt: (v) => Math.round(v), onInput: (v) => setEnv({ food: v }) });
-  sliders.tough = slider({ label: 'Tough, woody food', min: 0, max: 1, step: 0.01, value: sim().env.tough, fmt: (v) => Math.round(v * 100) + '%', onInput: (v) => setEnv({ tough: v }) });
+  sliders.snow = slider({ label: 'Snow cover', min: 0, max: 1, step: 0.01, value: sim().env.snow, fmt: (v) => Math.round(v * 100) + '%', onInput: (v) => { setEnv({ snow: v }); markPreset(null); } });
+  sliders.temp = slider({ label: 'Temperature', min: -1, max: 1, step: 0.01, value: sim().env.temp, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)} ${tempWord(v)}`, onInput: (v) => { setEnv({ temp: v }); markPreset(null); } });
+  sliders.food = slider({ label: 'Food (rabbits supported)', min: 10, max: 600, step: 5, value: sim().env.food, fmt: (v) => Math.round(v), onInput: (v) => { setEnv({ food: v }); markPreset(null); } });
+  sliders.tough = slider({ label: 'Tough, woody food', min: 0, max: 1, step: 0.01, value: sim().env.tough, fmt: (v) => Math.round(v * 100) + '%', onInput: (v) => { setEnv({ tough: v }); markPreset(null); } });
   const predBox = h('input', { type: 'checkbox', id: 'pred-on' });
-  predBox.addEventListener('change', () => { predOn = predBox.checked; applyPredators(); });
-  const predSlider = slider({ label: 'Number of foxes', min: 1, max: 8, step: 1, value: predCount, fmt: (v) => v, onInput: (v) => { predCount = v; if (predOn) applyPredators(); } });
+  predBox.addEventListener('change', () => { predOn = predBox.checked; applyPredators(); markPreset(null); });
+  // moving the fox slider switches the foxes on: no hidden "why is nothing happening" state
+  const predSlider = slider({ label: 'How many foxes', min: 1, max: 8, step: 1, value: predCount, fmt: (v) => v, onInput: (v) => { predCount = v; predOn = true; predBox.checked = true; applyPredators(); markPreset(null); } });
   const syncAll = () => {
     const e = sim().env;
     sliders.snow.set(e.snow); sliders.temp.set(e.temp); sliders.food.set(e.food); sliders.tough.set(e.tough);
-    predOn = e.predators > 0; if (predOn) predCount = e.predators; predBox.checked = predOn; predSlider.set(predCount);
+    predOn = e.predators > 0; if (predOn) predCount = e.predators; predBox.checked = predOn; predSlider.set(predCount); syncFox();
   };
-  const preset = (p) => { sim().setEnv(p.env); sim().setPredators(p.predators); syncAll(); ui.toast(`Preset: ${p.label}`, 'info'); };
+  const foxWord = (n) => (n ? `${n} fox${n > 1 ? 'es' : ''}` : 'no foxes');
+  const preset = (p) => {
+    sim().setEnv(p.env); sim().setPredators(p.predators); syncAll(); markPreset(p.id);
+    ui.toast(`Preset "${p.label}": snow ${Math.round(p.env.snow * 100)}%, ${tempWord(p.env.temp)}, food for ${p.env.food}, ${foxWord(p.predators)}. The sliders and the fox switch below have moved to match.`, 'info', 7000);
+    if (p.predators > 0 && sim().pop < 12) ui.toast(`Careful: only ${sim().pop} rabbits. ${foxWord(p.predators)} can wipe out a warren this small, so let it grow first (switch the foxes off for a few generations).`, 'bad', 9000);
+  };
 
   const valley = h('details', { open: true }, h('summary', { text: 'The valley' }),
-    h('div', { class: 'btn-row' }, PRESETS.map((p) => h('button', { class: 'btn small', text: p.label, onclick: () => preset(p) }))),
+    h('div', { class: 'btn-row' }, PRESETS.map((p) => (presetBtns[p.id] = h('button', { class: 'btn small preset', onclick: () => preset(p) }, p.label, h('small', { text: `${tempWord(p.env.temp)} · ${foxWord(p.predators)}` }))))),
+    h('p', { class: 'note', text: 'A preset sets everything below at once, including the foxes. Change any control afterwards to make your own valley.' }),
     sliders.snow, sliders.temp, sliders.food, sliders.tough,
-    h('div', { class: 'row' }, predBox, h('label', { for: 'pred-on', text: 'Predators (foxes)' })), predSlider,
+    h('div', { class: 'fox-box' }, h('div', { class: 'row' }, predBox, h('label', { for: 'pred-on', text: 'Foxes in the valley' }), foxState), predSlider),
     h('p', { class: 'note', text: 'Changes to the valley bite from the next generation.' }));
 
   // ----- Genes -----
@@ -95,6 +107,7 @@ export function buildExplore(root, ctx) {
     const s = p.setup || {};
     if (s.env) sim().setEnv(s.env);
     if (s.predators != null) sim().setPredators(s.predators);
+    markPreset(null);
     if (s.mutationRate != null) { sim().setMutationRate(s.mutationRate); mutSlider.set(s.mutationRate); }
     for (const g of s.plant || []) plantBtns[g]?.click();
     if (s.genotypeView) { gv.checked = true; ui.setGenotypeView(true); }
