@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fur &amp; Fang render demo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe8f2; font: 13px/1.35 system-ui, sans-serif; color: #2b2a26; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #panel { position: fixed; left: 8px; top: 8px; max-width: min(300px, calc(100vw - 16px)); background: rgba(250, 244, 230, .92); border: 1px solid #5a4a32; border-radius: 10px; padding: 8px 10px; box-shadow: 0 2px 10px #0003; }
+  #panel summary { cursor: pointer; font-weight: 700; }
+  #panel label { display: grid; grid-template-columns: 52px 1fr 34px; align-items: center; gap: 6px; margin: 3px 0; }
+  #panel input[type=range] { width: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px; margin: 5px 0; }
+  button, select { font: inherit; padding: 3px 7px; border: 1px solid #5a4a32; background: #fff8e8; border-radius: 6px; cursor: pointer; }
+  button.on { background: #ffd447; }
+  #fps { font-variant-numeric: tabular-nums; font-weight: 700; }
+  small { color: #6b5b43; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three/build/three.module.js", "three/examples/jsm/": "./vendor/three/examples/jsm/" } }</script>
+</head>
+<body>
+<canvas id="gl" aria-label="3D valley"></canvas>
+<details id="panel" open>
+  <summary>Render demo &middot; <span id="fps">--</span> fps &middot; <span id="info"></span></summary>
+  <label>snow <input id="snow" type="range" min="0" max="1" step="0.01" value="0"><span id="snowv">0</span></label>
+  <label>temp <input id="temp" type="range" min="-1" max="1" step="0.01" value="0"><span id="tempv">0</span></label>
+  <label>food <input id="food" type="range" min="0" max="1" step="0.01" value="1"><span id="foodv">1</span></label>
+  <label>tough <input id="tough" type="range" min="0" max="1" step="0.01" value="0"><span id="toughv">0</span></label>
+  <div class="row"><small>rabbits</small><button data-n="10">10</button><button data-n="100" class="on">100</button><button data-n="600">600</button>
+    <small>foxes</small><button data-f="0">0</button><button data-f="2" class="on">2</button><button data-f="6">6</button></div>
+  <div class="row"><small>kill</small><button data-d="predator">fox</button><button data-d="cold">cold</button><button data-d="heat">heat</button><button data-d="starved">starved</button><button data-d="old">old</button></div>
+  <div class="row"><button id="mut">mutation</button><button id="birth">birth</button><button id="geno">genotype view</button><button id="follow">follow</button><button id="clover">clover</button><button id="shelter">shelter</button></div>
+  <div class="row"><small>presets</small><button data-p="lush">lush</button><button data-p="snow">snowy</button><button data-p="patchy">patchy</button><button data-p="drought">drought</button>
+    <small>quality</small><select id="q"><option>auto</option><option>low</option><option selected>high</option><option>ultra</option></select></div>
+  <small>drag = orbit &middot; wheel/pinch = zoom &middot; right-drag/two-finger = pan &middot; click a rabbit to follow</small>
+</details>
+<script type="module">
+import { createWorld } from './src/render/world.js';
+import { GENOTYPE_COLORS } from './src/render/palette.js';
+
+const P = new URLSearchParams(location.search);
+const canvas = document.getElementById('gl');
+const world = await createWorld(canvas, { quality: P.get('q') || 'high' });
+window.world = world;
+
+// ---------------------------------------------------------------- mock sim (random walkers + hunting foxes)
+let seed = 12345; const rnd = () => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const pick = (a) => a[Math.floor(rnd() * a.length)];
+const sim = { rabbits: [], predators: [], patches: [], env: { snow: 0, temp: 0, food: 100, tough: 0, predators: 2 } };
+let nextId = 1, events = [];
+function newRabbit(x, z, age = 2) {
+  const fur = pick(['BB', 'BB', 'Bb', 'Bb', 'bb']), ears = pick(['EE', 'EE', 'Ee', 'ee']), teeth = pick(['tt', 'tt', 'Tt', 'TT']);
+  const r = { id: nextId++, genotype: { fur, ears, teeth }, pheno: { white: fur === 'bb', longEars: ears === 'ee', longTeeth: /T/.test(teeth) }, age, alive: true, x, z, state: 'idle', dyingCause: null, parents: [0, 0], born: 0,
+    tx: x, tz: z, wait: rnd() * 3, speed: 1.4 + rnd() * 1.1 };
+  return r;
+}
+const rr = () => (rnd() * 2 - 1) * 54;
+function setRabbits(n) {
+  const live = sim.rabbits.filter((r) => r.alive);
+  while (live.length > n) { const r = live.pop(); sim.rabbits.splice(sim.rabbits.indexOf(r), 1); }
+  while (live.length < n) { const warren = pick([[-30, -20], [29, 22], [-8, 35], [10, -5]]); const r = newRabbit(warren[0] + (rnd() - 0.5) * 24, warren[1] + (rnd() - 0.5) * 24, rnd() < 0.2 ? 0 : 2); sim.rabbits.push(r); live.push(r); }
+}
+function setFoxes(n) {
+  sim.predators.length = Math.min(sim.predators.length, n);
+  while (sim.predators.length < n) sim.predators.push({ id: 100 + sim.predators.length, x: rr(), z: rr(), targetId: null, state: 'wander', tx: rr(), tz: rr(), pt: 0 });
+}
+function kill(r, cause) { if (!r || !r.alive) return; r.alive = false; r.state = 'dying'; r.dyingCause = cause; r.removeAt = 3.0; events.push({ type: 'death', id: r.id, cause, x: r.x, z: r.z }); }
+function step(dt) {
+  const hz = sim.env.temp;
+  for (const r of sim.rabbits) {
+    if (!r.alive) { r.removeAt -= dt; continue; }
+    let flee = null, fd = 14;
+    for (const f of sim.predators) { const d = Math.hypot(f.x - r.x, f.z - r.z); if (d < fd) { fd = d; flee = f; } }
+    if (flee) { const dx = r.x - flee.x, dz = r.z - flee.z, l = Math.hypot(dx, dz) || 1; r.tx = r.x + dx / l * 12; r.tz = r.z + dz / l * 12; r.state = 'flee'; r.wait = 0; }
+    else if (r.state === 'flee') r.state = 'idle';
+    if (r.wait > 0) { r.wait -= dt; r.state = 'idle'; if (r.wait <= 0) { r.tx = Math.max(-58, Math.min(58, r.x + (rnd() - 0.5) * 22)); r.tz = Math.max(-58, Math.min(58, r.z + (rnd() - 0.5) * 22)); } continue; }
+    const dx = r.tx - r.x, dz = r.tz - r.z, d = Math.hypot(dx, dz);
+    if (d < 0.5) { r.wait = 1 + rnd() * 5; r.state = 'idle'; continue; }
+    const sp = r.state === 'flee' ? 6.5 : r.speed;
+    r.x += dx / d * sp * dt; r.z += dz / d * sp * dt; if (r.state !== 'flee') r.state = 'hop';
+    r.x = Math.max(-59, Math.min(59, r.x)); r.z = Math.max(-59, Math.min(59, r.z));
+  }
+  sim.rabbits = sim.rabbits.filter((r) => r.alive || r.removeAt > 0);
+  for (const f of sim.predators) {
+    const live = sim.rabbits.filter((r) => r.alive);
+    if (f.state === 'pounce') {
+      f.pt += dt; if (f.pt > 0.7) {
+        const t = live.find((r) => r.id === f.targetId);
+        if (t && Math.hypot(t.x - f.x, t.z - f.z) < 3.5) { events.push({ type: 'catch', id: t.id, x: t.x, z: t.z }); kill(t, 'predator'); t.removeAt = 0.02; }
+        f.state = 'wander'; f.targetId = null; f.pt = 0; f.cool = 3; f.tx = rr(); f.tz = rr();
+      }
+      continue;
+    }
+    f.cool = Math.max(0, (f.cool || 0) - dt);
+    let tgt = live.find((r) => r.id === f.targetId);
+    if (!tgt && !f.cool) { let bd = 28; for (const r of live) { const d = Math.hypot(r.x - f.x, r.z - f.z); const vis = r.pheno.white && sim.env.snow < 0.4 ? 1 : r.pheno.white ? 0.45 : sim.env.snow > 0.6 ? 1 : 0.7; if (d < bd * vis) { bd = d; tgt = r; } } if (tgt) f.targetId = tgt.id; }
+    if (tgt) {
+      const dx = tgt.x - f.x, dz = tgt.z - f.z, d = Math.hypot(dx, dz) || 1;
+      if (d < 3) { f.state = 'pounce'; f.pt = 0; continue; }
+      f.state = 'chase'; f.x += dx / d * 7.2 * dt; f.z += dz / d * 7.2 * dt;
+      if (d > 40) { f.targetId = null; f.state = 'wander'; }
+    } else {
+      f.state = 'wander'; const dx = f.tx - f.x, dz = f.tz - f.z, d = Math.hypot(dx, dz);
+      if (d < 1) { f.tx = rr(); f.tz = rr(); } else { f.x += dx / d * 2.4 * dt; f.z += dz / d * 2.4 * dt; }
+    }
+  }
+}
+// births top the population back up so the demo keeps running
+let topUp = 0;
+
+// ---------------------------------------------------------------- controls
+const $ = (id) => document.getElementById(id);
+const sl = { snow: $('snow'), temp: $('temp'), food: $('food'), tough: $('tough') };
+function readEnv() { sim.env.snow = +sl.snow.value; sim.env.temp = +sl.temp.value; sim.env.food = +sl.food.value * 100; sim.env.tough = +sl.tough.value; for (const k in sl) $(k + 'v').textContent = (+sl[k].value).toFixed(2).replace(/0$/, ''); }
+for (const k in sl) sl[k].addEventListener('input', readEnv);
+for (const k of ['snow', 'temp', 'food', 'tough']) if (P.has(k)) sl[k].value = P.get(k);
+readEnv();
+let target = +(P.get('n') || 100); setRabbits(target); setFoxes(+(P.get('f') ?? 2));
+document.querySelectorAll('[data-n]').forEach((b) => b.onclick = () => { target = +b.dataset.n; setRabbits(target); document.querySelectorAll('[data-n]').forEach((x) => x.classList.toggle('on', x === b)); });
+document.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { setFoxes(+b.dataset.f); document.querySelectorAll('[data-f]').forEach((x) => x.classList.toggle('on', x === b)); });
+document.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { const live = sim.rabbits.filter((r) => r.alive); const r = b.dataset.d === 'predator' ? null : pick(live); if (b.dataset.d === 'predator') { const f = sim.predators[0]; const t = pick(live); if (f && t) { f.x = t.x - 6; f.z = t.z; f.targetId = t.id; f.state = 'chase'; } } else kill(r, b.dataset.d); });
+$('mut').onclick = () => { const live = sim.rabbits.filter((r) => r.alive); const r = pick(live); if (r) events.push({ type: 'mutation', id: r.id, x: r.x, z: r.z }); };
+$('birth').onclick = () => { const p = pick(sim.rabbits.filter((r) => r.alive)); const r = newRabbit((p ? p.x : 0) + 1, (p ? p.z : 0), 0); sim.rabbits.push(r); events.push({ type: 'birth', id: r.id, x: r.x, z: r.z }); };
+let gv = false; $('geno').onclick = () => { gv = !gv; world.setGenotypeView(gv); $('geno').classList.toggle('on', gv); };
+let fol = null; $('follow').onclick = () => { if (fol != null) { fol = null; world.follow(null); } else { const r = pick(sim.rabbits.filter((r) => r.alive)); if (r) { fol = r.id; world.follow(r.id); } } $('follow').classList.toggle('on', fol != null); };
+let pid = 1; const addPatch = (type) => { const c = world.groundPoint(innerWidth / 2, innerHeight * 0.55) || { x: 0, z: 0 }; sim.patches.push({ id: pid++, type, x: c.x, z: c.z, radius: type === 'clover' ? 4 : 2.6, expiresGen: 9 }); };
+$('clover').onclick = () => addPatch('clover'); $('shelter').onclick = () => addPatch('shelter');
+const PRE = { lush: [0, 0, 1, 0], snow: [0.95, -0.8, 0.8, 0], patchy: [0.5, -0.2, 0.7, 0], drought: [0, 0.85, 0.2, 0.8] };
+document.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => { const p = PRE[b.dataset.p]; ['snow', 'temp', 'food', 'tough'].forEach((k, i) => sl[k].value = p[i]); readEnv(); });
+$('q').value = P.get('q') || 'high'; $('q').onchange = (e) => world.setQuality(e.target.value);
+if (P.get('geno')) { gv = true; world.setGenotypeView(true); }
+canvas.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse' && e.button !== 0) return; if (canvas.__moved) return; const id = world.pick(e.clientX, e.clientY); if (id != null) { fol = id; world.follow(id); $('follow').classList.add('on'); } });
+let down = null; canvas.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; canvas.__moved = false; }); canvas.addEventListener('pointermove', (e) => { if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) canvas.__moved = true; });
+if (P.get('cam')) { const [x, y, z, tx, tz] = P.get('cam').split(',').map(Number); world.camera.position.set(x, y, z); world.controls.target.set(tx ?? 0, 1, tz ?? 0); world.controls.update(); }
+if (P.get('follow')) { const r = sim.rabbits[+P.get('follow')]; if (r) { fol = r.id; world.follow(r.id); } }
+
+// ---------------------------------------------------------------- loop
+let last = performance.now(), acc = 0, frames = 0, fpsT = 0, frameNo = 0;
+const TICK = 1 / 20;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  acc += dt; while (acc >= TICK) { step(TICK); acc -= TICK; if ((topUp += TICK) > 0.4) { topUp = 0; const live = sim.rabbits.filter((r) => r.alive).length; if (live < target) { const p = pick(sim.rabbits.filter((r) => r.alive)) || { x: 0, z: 0 }; const r = newRabbit(p.x + 1, p.z, 0); sim.rabbits.push(r); events.push({ type: 'birth', id: r.id, x: r.x, z: r.z }); } } }
+  if (events.length) { world.onEvents(events); events = []; }
+  world.update(sim, dt);
+  frames++; fpsT += dt; frameNo++;
+  if (fpsT > 0.5) { $('fps').textContent = (frames / fpsT).toFixed(0); $('info').textContent = `${world.stats.quality} · ${sim.rabbits.length} rabbits · ${(world.stats.triangles / 1000).toFixed(0)}k tris · ${world.stats.drawCalls} calls`; frames = 0; fpsT = 0; }
+  if (frameNo === 40) document.title = 'ready';
+  requestAnimationFrame(frame);
+}
+if (P.get('panel') === '0') $('panel').style.display = 'none';
+if (innerWidth < 500) $('panel').open = false;
+// pre-roll the mock sim so screenshots show a spread-out herd
+for (let i = 0; i < 400; i++) step(TICK);
+requestAnimationFrame(frame);
+window.__demo = { sim, world, step };
+</script>
+</body>
+</html>
