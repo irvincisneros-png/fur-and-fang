@@ -3,7 +3,10 @@ import * as THREE from 'three';
 import { paintMaterial, outlineMaterial } from './paint.js';
 import { heightAt, inStream, normalAt, streamX, wetAt } from './terrain.js';
 import { rng, clamp, hashId } from './palette.js';
+import { BURROWS, FORDS } from '../sim/valley.js';
+import { createGroundRing } from './fx.js';
 
+export const PATCH_COL = { clover: 0xb6f08a, shelter: 0xffd27a };
 const eb = (t) => { const c1 = 1.8, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 
@@ -24,7 +27,8 @@ export function createProps(models, quality) {
   const put = (name, x, z, s = 1, rot = R() * 6.283, sink = 0.04) => {
     const y = heightAt(x, z) - sink * s; (place[name] ||= []).push(compose(new THREE.Matrix4(), x, y, z, s, rot, 0, 0));
   };
-  const ok = (x, z, pad = 2.5) => !inStream(x, z, pad);
+  const nearBurrow = (x, z, r = 4.5) => BURROWS.some((b) => Math.hypot(b.x - x, b.z - z) < r);
+  const ok = (x, z, pad = 2.5) => !inStream(x, z, pad) && !nearBurrow(x, z);
   const at = (cx, cz, r) => { const a = R() * 6.283, d = Math.sqrt(R()) * r; return [cx + Math.cos(a) * d, cz + Math.sin(a) * d]; };
 
   // ---- hero landmarks
@@ -47,7 +51,7 @@ export function createProps(models, quality) {
   }
   for (let i = 0; i < 16; i++) { const a = R() * 6.283, d = 64 + R() * 30; put(R() < 0.5 ? 'boulder_a' : 'boulder_b', Math.cos(a) * d, Math.sin(a) * d, 1.0 + R() * 1.4); }
   // stepping stones across the stream
-  for (let k = 0; k < 5; k++) { const z = 3.5 + (k % 2) * 0.6, x = streamX(z) + (k - 2) * 1.55; put('rock_a', x, z + k * 0.2, 0.62, R() * 6, 0.12); }
+  for (const zf of FORDS) for (let k = 0; k < 5; k++) { const z = zf - 0.4 + (k % 2) * 0.7, x = streamX(zf) + (k - 2) * 1.55; put(['rock_a', 'rock_b', 'rock_a'][k % 3], x, z, 0.62 + 0.1 * (k % 2), R() * 6, 0.12); }
   put('log_a', streamX(-14) + 6.5, -14, 1.3, 0.5, 0.0);
   put('log_a', -20, 44, 1.0, 2.2, 0.0);
   // bank rocks and scattered rocks, shrubs
@@ -55,8 +59,9 @@ export function createProps(models, quality) {
   for (let i = 0; i < 40; i++) { const [x, z] = at(0, 0, 62); if (Math.hypot(x, z) > 14 && ok(x, z, 1.5)) put(['rock_a', 'rock_b', 'rock_c'][i % 3], x, z, 0.6 + R() * 1.0); }
   for (let i = 0; i < 70; i++) { const [x, z] = at(0, 0, 66); if (Math.hypot(x, z) > 11 && ok(x, z, 1.5)) put(R() < 0.65 ? 'shrub_a' : 'shrub_b', x, z, 0.8 + R() * 0.8, undefined, 0.0); }
   // burrow mounds (warrens)
-  const WARREN = [[-30, -18], [-25, -23], [-33, -23], [29, 21], [23, 27], [-6, 36], [-12, 33], [44, -12]];
-  for (const [x, z] of WARREN) { put('burrow_mound', x, z, 1.1 + R() * 0.3, 0.2 + R() * 6, 0.05); }
+  // WARREN: a main mound on every sim burrow (src/sim/valley.js BURROWS) plus a smaller neighbour, so rabbits live where the mounds are
+  const WARREN = BURROWS.flatMap((b, i) => { const a = i * 2.4 + 0.7; return [[b.x, b.z, 1.3], [b.x + Math.cos(a) * 3.6, b.z + Math.sin(a) * 3.6, 0.95]]; });
+  for (const [x, z, s] of WARREN) { put('burrow_mound', x, z, s + R() * 0.15, 0.2 + R() * 6, 0.05); }
 
   // ---- instanced meshes
   const matFor = (n) => n.startsWith('gum') || n.startsWith('pine') || n.startsWith('wattle') ? mats.tree : n.startsWith('shrub') ? mats.plain : mats.rock;
@@ -112,20 +117,26 @@ export function createProps(models, quality) {
       for (const p of sim.patches || []) {
         seen.add(p.id);
         let r = patches.get(p.id);
-        if (!r) { r = { id: p.id, t: 0, out: false }; patches.set(p.id, r); }
+        if (!r) {
+          r = { id: p.id, t: 0, out: false, ring: createGroundRing({ color: PATCH_COL[p.type] || 0xffffff, opacity: 0.6, fill: 0.07, width: 0.3 }) };   // the ring shows how far the patch reaches
+          group.add(r.ring.group); patches.set(p.id, r);
+        }
         r.x = p.x; r.z = p.z; r.type = p.type; r.rad = p.radius || 3; r.out = false; r.gen = p.expiresGen;
       }
       let nc = 0, ns = 0;
       for (const [id, r] of patches) {
         if (!seen.has(id)) r.out = true;
         r.t += r.out ? -dt * 1.6 : dt * 1.6;
-        if (r.out && r.t < -0.05) { patches.delete(id); continue; }
+        if (r.out && r.t < -0.05) { group.remove(r.ring.group); r.ring.dispose(); patches.delete(id); continue; }
         r.t = clamp(r.t, -0.1, 1.2);
+        r.ring.set(r.x, r.z, r.rad * clamp(r.t)); r.ring.show(r.t > 0.02);
+        const left = r.gen != null ? r.gen - sim.gen : 9;              // generations left: the ring thins out as the patch runs down
+        r.ring.style(PATCH_COL[r.type] || 0xffffff, (left <= 1 ? 0.3 + 0.2 * Math.sin(performance.now() * 0.008) : 0.6) * clamp(r.t), 0.07 * clamp(r.t));
         const k = r.out ? clamp(r.t) : eb(clamp(r.t));
         const h = hashId(id);
         if (r.type === 'shelter') {
           if (ns >= cap) continue;
-          const s = Math.max(0.01, k) * (r.rad * 0.55 + 0.6);
+          const s = Math.max(0.01, k) * 5.2;
           shelM.setMatrixAt(ns++, compose(_m, r.x, heightAt(r.x, r.z) - 0.02, r.z, s, h * 6.283));
         } else {
           if (nc >= cap) continue;

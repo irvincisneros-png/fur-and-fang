@@ -14,8 +14,8 @@ function vn(x, y) {
   return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
 }
 
-export const streamX = (z) => -9 + 15 * Math.sin(z * 0.043 + 0.9) + 5 * Math.sin(z * 0.11 + 2.0);
-const STREAM_W = 3.5;               // water half-width
+import { streamX, STREAM_W } from '../sim/valley.js';   // one stream for the sim and the picture
+export { streamX };
 const CARVE = 1.15;
 
 function baseHeight(x, z) {

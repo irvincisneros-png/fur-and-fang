@@ -1,7 +1,8 @@
 # Red fox parts for Fur & Fang (separate meshes, animated by pivots in src/render/foxes.js).
 #   blender -b --factory-startup --python tools/blender/build_fox.py -- [--no-preview]
 # +X nose, +Z up, feet at z = 0 when assembled with PIVOTS below.
-# Parts: fox_body (origin at ground), fox_head (origin = neck joint), fox_tail (origin = tail base), fox_leg (origin = hip; hangs to z = -0.5)
+# Parts: fox_body (origin at ground), fox_head (origin = neck joint), fox_tail_a (origin = tail root, set INSIDE the rump so the
+#   brush never gaps), fox_tail_b (origin = mid-tail joint, TAIL_MID behind the root), fox_leg (origin = hip; hangs to z = -0.5)
 import bpy, sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from furlib import *
@@ -9,7 +10,7 @@ from mathutils import Vector
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 PREVIEW = '--no-preview' not in sys.argv
 reset()
-NECK = (0.60, 0, 0.74); TAILB = (-0.62, 0, 0.58)
+NECK = (0.60, 0, 0.74); TAILB = (-0.50, 0, 0.64); TAIL_MID = (-0.40, 0, -0.03)
 ORANGE, DEEP, CREAM, SOCK, DARK = srgb(0xe0702c), srgb(0xc9591e), srgb(0xf6e9d0), srgb(0x3b2822), srgb(0x16110f)
 
 def body():
@@ -62,17 +63,32 @@ def head():
     vcolor(o, col)
     return finish(o, 'fox_head', ao=0.5)
 
-def tail():
+def tail_col(co, n, tip_x):
+    c = mix(ORANGE, DEEP, smoothstep(-0.05, 0.1, co.z) * 0.6)
+    return mix(c, CREAM, smoothstep(tip_x + 0.14, tip_x, co.x))
+
+def tail_a():
+    # root half: starts thin inside the rump (the origin is the pivot) and fattens toward the middle of the brush
     el = []
-    n = 9
-    for i in range(n + 1):
-        t = i / n
-        r = 0.09 + 0.13 * math.sin(math.pi * min(1, t * 0.85 + 0.12))
-        el.append((Vector((-0.12 - t * 0.78, 0, 0.02 - 0.10 * t + 0.0)), r))
-    m = metaball_mesh('ft', el, resolution=0.028)
-    budget(m, 420)
-    vcolor(m, lambda co, n: CREAM if co.x < -0.68 else mix(mix(ORANGE, DEEP, smoothstep(-0.05, 0.1, co.z) * 0.6), CREAM, smoothstep(-0.58, -0.7, co.x)))
-    return finish(m, 'fox_tail', ao=0.35)
+    for i in range(6):
+        t = i / 5
+        el.append((Vector((0.03 - 0.43 * t, 0, -0.03 * t)), 0.15 + 0.15 * math.sin(math.pi * 0.5 * t)))
+    m = metaball_mesh('fta', el, resolution=0.028)
+    budget(m, 260)
+    vcolor(m, lambda co, n: tail_col(co, n, -9))
+    return finish(m, 'fox_tail_a', ao=0.3)
+
+def tail_b():
+    # tip half: origin at the mid-tail joint, overlapping tail_a so a bend never opens a seam
+    el = []
+    for i in range(7):
+        t = i / 6
+        el.append((Vector((0.04 - 0.52 * t, 0, -0.02 * t)), 0.30 - 0.19 * t * t))
+    m = metaball_mesh('ftb', el, resolution=0.028)
+    budget(m, 300)
+    xs = [v.co.x for v in m.data.vertices]
+    vcolor(m, lambda co, n: tail_col(co, n, min(xs) + 0.02))
+    return finish(m, 'fox_tail_b', ao=0.3)
 
 def leg():
     parts = [ellipsoid((0, 0, -0.10), 0.12, (0.9, 0.7, 1.35), 8), ellipsoid((0.0, 0, -0.30), 0.065, (0.7, 0.7, 2.2), 7),
@@ -81,7 +97,7 @@ def leg():
     vcolor(o, lambda co, n: mix(ORANGE, SOCK, smoothstep(-0.2, -0.32, co.z)))
     return finish(o, 'fox_leg', ao=0.5)
 
-parts = [body(), head(), tail(), leg()]
+parts = [body(), head(), tail_a(), tail_b(), leg()]
 for p in parts: print(p.name, stats(p))
 export(parts, os.path.join(ROOT, 'assets', 'models', 'fox.glb'))
 if PREVIEW:
@@ -92,7 +108,7 @@ if PREVIEW:
             bpy.context.view_layer.objects.active = c; bpy.ops.object.select_all(action='DESELECT'); c.select_set(True)
             bpy.ops.object.transform_apply(location=True, scale=True); cs.append(c)
         P = {p.name: p for p in parts}
-        cp(P['fox_body']); cp(P['fox_head'], NECK); cp(P['fox_tail'], TAILB)
+        cp(P['fox_body']); cp(P['fox_head'], NECK); cp(P['fox_tail_a'], TAILB); cp(P['fox_tail_b'], tuple(TAILB[i] + TAIL_MID[i] for i in range(3)))
         for x in (-0.40, 0.40):
             for s in (-1, 1): cp(P['fox_leg'], (x, s * 0.15, 0.5))
         o = join(cs, tag); o.rotation_euler = (0, 0, math.radians(rot)); return o

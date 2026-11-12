@@ -1,6 +1,7 @@
 // Particles: falling snow (GPU-animated), plus a small CPU pool for dust puffs, sparkles, birth pops, frost. Heat shimmer lives in post.js.
 import * as THREE from 'three';
 import { rng } from './palette.js';
+import { heightAt, inStream, waterLevelAt } from './terrain.js';
 
 const SOFT = /* glsl */`
 float soft(vec2 c){ float d = length(c - 0.5)*2.0; return smoothstep(1.0, 0.25, d); }
@@ -90,5 +91,61 @@ void main(){ float s = vK > 0.5 ? star(gl_PointCoord) : soft(gl_PointCoord); flo
       }
       for (const k of ['position', 'aSize', 'aAlpha', 'aColor', 'aKind']) g.attributes[k].needsUpdate = true;
     },
+  };
+}
+
+// A flat band (plus a faint fill) that hugs the terrain: the placement preview, the reach of live patches, and event pings.
+export function createGroundRing({ color = 0xffffff, opacity = 0.9, fill = 0.14, width = 0.5, seg = 56 } = {}) {
+  const band = new THREE.BufferGeometry(), disc = new THREE.BufferGeometry();
+  const bp = new Float32Array((seg + 1) * 2 * 3), dp = new Float32Array((seg + 2) * 3), bi = [], di = [];
+  for (let i = 0; i < seg; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; bi.push(a, c, b, b, c, d); di.push(0, i + 2, i + 1); }
+  band.setAttribute('position', new THREE.BufferAttribute(bp, 3).setUsage(THREE.DynamicDrawUsage)); band.setIndex(bi);
+  disc.setAttribute('position', new THREE.BufferAttribute(dp, 3).setUsage(THREE.DynamicDrawUsage)); disc.setIndex(di);
+  const mk = (o) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: o, depthWrite: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  const mBand = mk(opacity), mDisc = mk(fill);
+  const group = new THREE.Group(), a = new THREE.Mesh(band, mBand), b = new THREE.Mesh(disc, mDisc);
+  a.frustumCulled = b.frustumCulled = false; a.renderOrder = 3; b.renderOrder = 3; group.add(b, a); group.visible = false;
+  const gy = (x, z) => { let y = heightAt(x, z); if (inStream(x, z, 0.4)) y = Math.max(y, waterLevelAt(z)); return y + 0.16; };
+  let lx = NaN, lz = NaN, lr = NaN;
+  return {
+    group,
+    set(x, z, r) {
+      if (x === lx && z === lz && r === lr) return; lx = x; lz = z; lr = r;
+      const ri = Math.max(0.05, r - width);
+      dp[0] = x; dp[1] = gy(x, z); dp[2] = z;
+      for (let i = 0; i <= seg; i++) {
+        const t = (i / seg) * Math.PI * 2, cx = Math.cos(t), cz = Math.sin(t), ox = x + cx * r, oz = z + cz * r, ix = x + cx * ri, iz = z + cz * ri, oy = gy(ox, oz);
+        bp[i * 6] = ox; bp[i * 6 + 1] = oy; bp[i * 6 + 2] = oz; bp[i * 6 + 3] = ix; bp[i * 6 + 4] = gy(ix, iz); bp[i * 6 + 5] = iz;
+        dp[(i + 1) * 3] = ox; dp[(i + 1) * 3 + 1] = oy; dp[(i + 1) * 3 + 2] = oz;
+      }
+      band.attributes.position.needsUpdate = true; disc.attributes.position.needsUpdate = true;
+    },
+    style(hex, o = opacity, f = fill) { mBand.color.set(hex); mDisc.color.set(hex); mBand.opacity = o; mDisc.opacity = f; },
+    show(v) { group.visible = v; },
+    dispose() { band.dispose(); disc.dispose(); mBand.dispose(); mDisc.dispose(); },
+  };
+}
+
+// Event pings: a few rings that spread out from a spot and fade (foxes entering, newcomers arriving, a patch going down).
+export function createPings(n = 6) {
+  const group = new THREE.Group(), pool = [];
+  for (let i = 0; i < n; i++) { const r = createGroundRing({ fill: 0, width: 0.7, seg: 40 }); r.t = 1e9; group.add(r.group); pool.push(r); }
+  return {
+    group,
+    ping(x, z, hex = 0xffffff, radius = 9, waves = 3) {
+      for (let w = 0; w < waves; w++) {
+        const r = pool.reduce((a, b) => (b.t > a.t ? b : a));
+        r.t = -w * 0.45; r.x = x; r.z = z; r.hex = hex; r.rad = radius; r.dur = 1.5;
+      }
+    },
+    update(dt) {
+      for (const r of pool) {
+        if (r.t >= (r.dur || 0)) { r.show(false); continue; }
+        r.t += dt; if (r.t < 0) { r.show(false); continue; }
+        const u = Math.min(1, r.t / r.dur), e = 1 - (1 - u) * (1 - u);
+        r.set(r.x, r.z, 1 + e * r.rad); r.style(r.hex, 0.9 * (1 - u), 0); r.show(true);
+      }
+    },
+    dispose() { for (const r of pool) r.dispose(); },
   };
 }

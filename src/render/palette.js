@@ -6,7 +6,7 @@ export const GENOTYPE_COLORS = { BB: 0xff8a1f, Bb: 0xa84dff, bb: 0x2ad4ee };   /
 export const FUR = { brown: 0xc58d58, white: 0xf7f5f1 };
 
 export const QUALITY = {
-  low:   { pr: 1.25, shadows: false, outlines: false, particles: 0.3, grass: 1100, flowers: 0, snow: 700,  post: false, shadowSize: 1024, blob: true },
+  low:   { pr: 1.25, shadows: false, outlines: false, particles: 0.3, grass: 1100, flowers: 0, snow: 700,  post: false, shadowSize: 1024, blob: true, lod: true },
   high:  { pr: 2.0,  shadows: true,  outlines: true,  particles: 1.0, grass: 3200, flowers: 500, snow: 2200, post: true, shadowSize: 2048, blob: false },
   ultra: { pr: 2.0,  shadows: true,  outlines: true,  particles: 1.0, grass: 5200, flowers: 900, snow: 3500, post: true, shadowSize: 4096, blob: false },
 };

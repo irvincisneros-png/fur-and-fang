@@ -2,16 +2,20 @@
 //   const world = await createWorld(canvas, { quality: 'auto' });   // 'auto' | 'low' | 'high' | 'ultra'
 //   world.update(sim, dt)  (every frame; also renders)   world.onEvents(events)
 //   world.pick(x, y) -> rabbit id | null    world.groundPoint(x, y) -> {x, z} | null
-//   world.follow(id | null)   world.setGenotypeView(bool)   world.resize()   world.dispose()
+//   world.follow(id | null)   world.followId   world.setGenotypeView(bool)   world.resize()   world.dispose()
+//   world.setPreview(type | null, x, z, radius)  placement ring      world.ping(x, z, hex, radius)  spreading rings
+//   world.look(x, z, { zoom, hold })  camera glances at a spot and comes back      world.pulse(zoom)  brief pull-back
+//   world.setInsets({ left, top, right, bottom })  CSS px covered by UI: the valley is centred in what is left
+//   world.intro()  opening push-in      world.mark(ids, hex)  ring some rabbits for a few seconds
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { loadAll } from './models.js';
 import { U } from './paint.js';
 import { buildTerrain, buildStream, heightAt } from './terrain.js';
 import { createSky, skyPalette } from './sky.js';
-import { createSnow, createPuffs } from './fx.js';
+import { createSnow, createPuffs, createGroundRing, createPings } from './fx.js';
 import { createPost } from './post.js';
-import { createProps } from './props.js';
+import { createProps, PATCH_COL } from './props.js';
 import { Herd } from './rabbits.js';
 import { Foxes } from './foxes.js';
 import { QUALITY, VALLEY, clamp, smooth, lerp } from './palette.js';
@@ -50,6 +54,8 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   };
   const herd = new Herd(models.rabbit, { onPuff }); scene.add(herd.group);
   const foxes = new Foxes(models.fox, { herd, onPuff }); scene.add(foxes.group);
+  const preview = createGroundRing({ opacity: 0.95, fill: 0.2, width: 0.45 }); scene.add(preview.group);
+  const pings = createPings(); scene.add(pings.group);
   const post = createPost(renderer);
 
   // ---- camera rig
@@ -58,8 +64,15 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   controls.minDistance = 4; controls.maxDistance = 125; controls.maxPolarAngle = 1.46; controls.minPolarAngle = 0.12;
   controls.zoomSpeed = 0.9; controls.rotateSpeed = 0.7; controls.panSpeed = 0.9;
   controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-  controls.target.set(0, 1, -4); camera.position.set(-14, 30, 66); controls.update();
+  const HOME = { target: new THREE.Vector3(1, 1, 3), pos: new THREE.Vector3(-9, 27, 55) };      // close enough that rabbits read, wide enough for both banks
+  controls.target.copy(HOME.target); camera.position.copy(HOME.pos); controls.update();
   let followId = null, followZoom = 0;
+  // camera cues: a glance toward a spot (and back) or a short pull-back. Applied as per-frame deltas so the player's own orbiting still works;
+  // dropped the moment the player grabs the camera.
+  let cue = null, userT = -9, intro = null;
+  const inset = { l: 0, t: 0, r: 0, b: 0, cx: 0, cy: 0 };
+  controls.addEventListener('start', () => { userT = time; cue = null; intro = null; });
+  const bump = (u, a, b) => smooth(0, a, u) * (1 - smooth(b, 1, u));
 
   // ---- state
   let qName = quality, tierIdx = quality === 'auto' ? 1 : TIERS.indexOf(quality), q = QUALITY[TIERS[Math.max(0, tierIdx)]];
@@ -67,7 +80,7 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   let prCap = 2, time = 0, genotypeView = false, disposed = false;
   const S = { snow: 0, temp: 0, food: 100, tough: 0 }; let foodRef = 60, dry = 0, heat = 0, firstEnv = true;
   const stats = { fps: 60, quality: TIERS[tierIdx], rabbits: 0, drawCalls: 0, triangles: 0 };
-  let fpsAcc = 0, fpsN = 0, slowWin = 0, grace = 3.0;
+  let fpsAcc = 0, fpsN = 0, slowWin = 0, grace = 3.0, lodAt = 260;      // herds bigger than lodAt use the cheap rabbit meshes
 
   function applyQuality() {
     q = QUALITY[TIERS[tierIdx]]; stats.quality = TIERS[tierIdx];
@@ -82,9 +95,15 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
     resize();
   }
 
+  let viewW = 1, viewH = 1;
+  function applyInset() {       // shift the picture so the orbit target sits in the middle of the part of the canvas the UI leaves free
+    if (Math.abs(inset.cx) < 0.5 && Math.abs(inset.cy) < 0.5) camera.clearViewOffset();
+    else camera.setViewOffset(viewW, viewH, -inset.cx, -inset.cy, viewW, viewH);
+  }
+
   function resize() {
     const w = Math.max(1, canvas.clientWidth || canvas.width), h = Math.max(1, canvas.clientHeight || canvas.height);
-    renderer.setSize(w, h, false);
+    renderer.setSize(w, h, false); viewW = w; viewH = h; applyInset();
     const a = w / h; camera.aspect = a;
     // keep the horizontal field of view wide enough in portrait (phones)
     camera.fov = a >= 1.25 ? 42 : THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(52) / 2) / a));
@@ -107,13 +126,14 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
     setQuality(name) {
       qName = name;
       if (name !== 'auto') tierIdx = Math.max(0, TIERS.indexOf(name)); else tierIdx = Math.max(tierIdx, 1);
-      prCap = 2; applyQuality();
+      prCap = 2; lodAt = 260; applyQuality();
     },
     resize,
 
-    update(sim, dt) {
+    update(sim, dt, realDt) {
       if (disposed) return;
       dt = clamp(dt || 0.016, 0.0005, 0.1); time += dt; U.uTime.value = time;
+      const rdt = clamp(realDt || dt, 0.0005, 0.25);
       const env = sim.env || {};
       // ---- environment -> uniforms (eased so sliders glide)
       const k = firstEnv ? 1 : 1 - Math.exp(-dt * 2.2); firstEnv = false;
@@ -135,6 +155,10 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       herd.genotypeView = genotypeView;
       const nR = (sim.rabbits || []).length;
       herd.setOutlines(q.outlines && (TIERS[tierIdx] === 'ultra' || nR <= 320));
+      // cheap rabbit meshes for the low tier and for big herds seen from afar; close-ups (following a rabbit) get the full model back
+      const camD = camera.position.distanceTo(controls.target);
+      if (q.lod || (nR > lodAt + 30 && camD > 26)) herd.setLod(true); else if (nR < lodAt - 30 || camD < 22) herd.setLod(false);
+      pings.update(rdt);
       herd.update(sim, dt, time);
       foxes.update(sim, dt, time);
       props.update(sim, dt);
@@ -162,6 +186,21 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
           }
         }
       }
+      // ---- camera cues
+      if (intro) {
+        intro.t += rdt; const u = smooth(0, 1, intro.t / intro.dur);
+        camera.position.lerpVectors(intro.from, HOME.pos, u); controls.target.copy(HOME.target);
+        if (intro.t >= intro.dur) intro = null;
+      }
+      if (cue && followId == null) {
+        cue.t += rdt; const u = cue.t / cue.dur, b = bump(u, cue.a, cue.b), d = b - cue.prev; cue.prev = b;
+        if (cue.dx || cue.dz) { controls.target.x += cue.dx * d; controls.target.z += cue.dz * d; camera.position.x += cue.dx * d; camera.position.z += cue.dz * d; }
+        if (cue.zoom) { _tmp.copy(camera.position).sub(controls.target); const L = _tmp.length(); camera.position.copy(controls.target).addScaledVector(_tmp.normalize(), L * (1 + cue.zoom * d)); }
+        if (u >= 1) cue = null;
+      } else if (cue) cue = null;
+      // ease the view offset toward the free part of the screen
+      const icx = (inset.l - inset.r) / 2, icy = (inset.t - inset.b) / 2;
+      if (Math.abs(icx - inset.cx) > 0.5 || Math.abs(icy - inset.cy) > 0.5) { const f = 1 - Math.exp(-rdt * 6); inset.cx += (icx - inset.cx) * f; inset.cy += (icy - inset.cy) * f; applyInset(); }
       controls.target.x = clamp(controls.target.x, -VALLEY - 4, VALLEY + 4); controls.target.z = clamp(controls.target.z, -VALLEY - 4, VALLEY + 4);
       if (followId == null) controls.target.y += (heightAt(controls.target.x, controls.target.z) + 0.8 - controls.target.y) * (1 - Math.exp(-dt * 4));
       controls.update();
@@ -179,16 +218,22 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       stats.drawCalls = renderer.info.render.calls; stats.triangles = renderer.info.render.triangles;
 
       // ---- adaptive quality
-      fpsAcc += dt; fpsN++;
+      // ---- adaptive quality: measured on real frame time (not sim time, which runs fast at 2x / 4x). A long gap is a hidden tab, not a slow GPU.
+      if (rdt > 0.2) { fpsAcc = 0; fpsN = 0; slowWin = 0; grace = Math.max(grace, 1); }
+      else { fpsAcc += rdt; fpsN++; }
       if (fpsAcc >= 1.0) {
         stats.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0;
         if (grace > 0) grace -= 1;
         else if (qName === 'auto') {
-          if (stats.fps < 38) slowWin++; else slowWin = 0;
+          if (stats.fps < 40) slowWin++; else slowWin = 0;
+          // step down one notch at a time: sharpness first, then the rabbit LOD, then shadows / outlines / grass (the low tier)
           if (slowWin >= 2) {
-            slowWin = 0;
-            if (tierIdx > 0 && prCap > 1.2 && tierIdx === 1) { prCap = 1.2; applyQuality(); }
-            else if (tierIdx > 0) { tierIdx--; applyQuality(); }
+            slowWin = 0; grace = 2;
+            if (tierIdx > 0 && prCap > 1.25) { prCap = 1.25; applyQuality(); }
+            else if (tierIdx > 0 && lodAt > 0) { lodAt = 0; }
+            else if (tierIdx > 0) { tierIdx = 0; applyQuality(); }
+            else if (prCap > 1) { prCap = 1; applyQuality(); }
+            stats.auto = `${TIERS[tierIdx]} @${prCap}x`;
           }
         }
       }
@@ -199,7 +244,7 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       for (const ev of events) {
         if (ev.type === 'gen') continue;
         herd.event(ev);
-        if (ev.type === 'death' && ev.cause === 'predator') { /* the catch event (or the dying pose) spawns the puff */ }
+        if (ev.type === 'patch' && ev.patch) pings.ping(ev.patch.x, ev.patch.z, PATCH_COL[ev.patch.type] || 0xffffff, ev.patch.radius, 2);
       }
     },
 
@@ -224,13 +269,38 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       return null;
     },
 
-    follow(id) { followId = id == null ? null : id; herd.followId = followId; if (followId != null) followZoom = 1.4; },
+    follow(id) { followId = id == null ? null : id; herd.followId = followId; if (followId != null) { followZoom = 1.4; cue = null; intro = null; } },
+    get followId() { return followId; },
+    setPreview(type, x, z, radius) {
+      if (!type) { preview.show(false); return; }
+      preview.style(PATCH_COL[type] || 0xffffff, 0.95, 0.2); preview.set(x, z, radius); preview.show(true);
+    },
+    ping(x, z, hex, radius, waves) { pings.ping(x, z, hex, radius, waves); },
+    mark(ids, hex, seconds) { herd.mark(ids, hex, seconds); },
+    /** glance: slide part of the way toward (x, z), hold, and come back. Skipped while following a rabbit or just after the player moved the camera. */
+    look(x, z, { amount = 0.6, zoom = 0, hold = 3.2 } = {}) {
+      if (followId != null || time - userT < 1.5 || intro) return false;
+      const dx = (x - controls.target.x) * amount, dz = (z - controls.target.z) * amount, dur = hold + 1.6;
+      cue = { t: 0, dur, a: 0.8 / dur, b: 1 - 0.9 / dur, prev: 0, dx, dz, zoom };
+      return true;
+    },
+    pulse(zoom = 0.12, hold = 1.6) { return this.look(controls.target.x, controls.target.z, { amount: 0, zoom, hold }); },
+    setInsets({ left = 0, top = 0, right = 0, bottom = 0 } = {}, snap = false) {
+      inset.l = left; inset.t = top; inset.r = right; inset.b = bottom;
+      if (snap) { inset.cx = (left - right) / 2; inset.cy = (top - bottom) / 2; applyInset(); }
+    },
+    home() { cue = null; intro = null; controls.target.copy(HOME.target); camera.position.copy(HOME.pos); controls.update(); },
+    intro() {
+      cue = null; controls.target.copy(HOME.target);
+      intro = { t: 0, dur: 2.6, from: HOME.pos.clone().sub(HOME.target).multiplyScalar(1.75).add(HOME.target).add(new THREE.Vector3(26, 10, 0)) };
+      camera.position.copy(intro.from); controls.update();
+    },
     setGenotypeView(on) { genotypeView = !!on; },
 
     dispose() {
       disposed = true;
       window.removeEventListener('resize', resize); if (ro) ro.disconnect();
-      controls.dispose(); herd.dispose(); foxes.dispose(); props.dispose(); sky.dispose(); post.dispose();
+      controls.dispose(); preview.dispose(); pings.dispose(); herd.dispose(); foxes.dispose(); props.dispose(); sky.dispose(); post.dispose();
       scene.traverse((o) => { if (o.geometry && !Object.values(models).some((s) => [...s.values()].includes(o.geometry))) o.geometry.dispose(); });
       for (const set of Object.values(models)) for (const g of set.values()) g.dispose();
       renderer.dispose(); try { renderer.forceContextLoss(); } catch (e) { /* ignore */ }

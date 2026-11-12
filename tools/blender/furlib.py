@@ -225,8 +225,8 @@ def preview(objs, path, ground=0xead7ad, sky=0x9fd8e8, cols=5, spacing=1.6, cam_
     for ob in (g, so, co): bpy.data.objects.remove(ob)
 
 # ---------------------------------------------------------------- Fur & Fang additions
-def ellipsoid(c, r, s=(1, 1, 1), seg=14, rot=(0, 0, 0)):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=seg, ring_count=max(6, seg // 2), radius=r, location=c)
+def ellipsoid(c, r, s=(1, 1, 1), seg=14, rot=(0, 0, 0), rings=None):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=seg, ring_count=rings or max(6, seg // 2), radius=r, location=c)
     o = bpy.context.active_object; o.scale = s; o.rotation_euler = rot
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
     return o
