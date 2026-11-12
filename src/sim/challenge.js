@@ -37,17 +37,17 @@ export class Challenge {
     };
     this.windows = [
       { id: 'spring', label: 'Lush spring', icon: '\u{1F331}', start: 0, end: tF, color: '#b9d98a' },
-      { id: 'foxes', label: 'Foxes arrive', icon: '\u{1F98A}', start: tF, end: tW, color: '#f0b27a', announce: 'Foxes arrive: 2 foxes are moving into the valley' },
-      { id: 'winter', label: 'Long winter', icon: '❄️', start: tW, end: tT, color: '#a9cbe8', announce: 'Cold front: snow arriving' },
-      { id: 'thaw', label: 'Thaw', icon: '\u{1F4A7}', start: tT, end: tD, color: '#9ed8c8', announce: 'Thaw: the snow melts fast, white rabbits will stand out' },
-      { id: 'drought', label: 'Drought and heatwave', icon: '☀️', start: tD, end: tD + 120, color: '#f2cf6b', announce: 'Heatwave: hot, dry, woody food' },
-      { id: 'calm', label: 'Calm spell', icon: '\u{1F33F}', start: tD + 120, end: tW2, color: '#d8e6b0' },
-      { id: 'winter2', label: 'Second winter', icon: '\u{1F328}️', start: tW2, end: tFin, color: '#8fb1d9', announce: 'Harsher cold front, and the foxes are at their peak' },
-      { id: 'finale', label: 'Mixed finale', icon: '⛅', start: tFin, end: D, color: '#d9b8d6', announce: 'Patchy snow, mild cold, many foxes' },
+      { id: 'foxes', label: 'Foxes arrive', icon: '\u{1F98A}', start: tF, end: tW, color: '#f0b27a', announce: 'Foxes arrive: 2 foxes are moving into the valley', tip: 'Foxes catch the rabbits they can see. Brown fur hides on grass; white fur does not.' },
+      { id: 'winter', label: 'Long winter', icon: '❄️', start: tW, end: tT, color: '#a9cbe8', announce: 'Cold front: snow arriving', tip: 'Snow is settling. White fur hides on snow, and long ears lose too much heat.' },
+      { id: 'thaw', label: 'Thaw', icon: '\u{1F4A7}', start: tT, end: tD, color: '#9ed8c8', announce: 'Thaw: the snow melts fast, white rabbits will stand out', tip: 'The snow is gone. White fur was the helpful trait a minute ago; now it is the one foxes spot.' },
+      { id: 'drought', label: 'Drought and heatwave', icon: '☀️', start: tD, end: tD + 120, color: '#f2cf6b', announce: 'Heatwave: hot, dry, woody food', tip: 'Hot, dry, and the plants turn woody. Long ears shed heat; long teeth can chew tough food.' },
+      { id: 'calm', label: 'Calm spell', icon: '\u{1F33F}', start: tD + 120, end: tW2, color: '#d8e6b0', tip: 'A breather. Rebuild numbers and variation before the next winter.' },
+      { id: 'winter2', label: 'Second winter', icon: '\u{1F328}️', start: tW2, end: tFin, color: '#8fb1d9', announce: 'Harsher cold front, and the foxes are at their peak', tip: 'A harsher winter, with more foxes than ever. Is white fur still in the warren?' },
+      { id: 'finale', label: 'Mixed finale', icon: '⛅', start: tFin, end: D, color: '#d9b8d6', announce: 'Patchy snow, mild cold, many foxes', tip: 'Patchy snow: no single fur colour is safe everywhere. Variation is the insurance.' },
     ];
     this.trust = P.TRUST_START;
     this.lastTranslocate = -99; this.lastFence = -99;
-    this.log = []; this.result = null;
+    this.log = []; this.result = null; this.phaseId = null;
     sim.hooks.envDriver = (s) => this.applyEnv(s);
     sim.hooks.onGenStart = (s) => this.onGenStart(s);
     this.applyEnv(sim);
@@ -56,6 +56,9 @@ export class Challenge {
   applyEnv(sim) {
     const t = sim.t, e = sim.env, k = this.tracks;
     e.snow = track(k.snow, t); e.temp = track(k.temp, t); e.food = track(k.food, t); e.tough = track(k.tough, t); e.predators = track(k.predators, t);
+    // tell the UI / renderer when the valley moves into its next phase (banner, camera cue)
+    const w = this.windowAt(t);
+    if (w.id !== this.phaseId) { if (this.phaseId != null) sim.events.push({ type: 'phase', id: w.id, label: w.label, icon: w.icon, tip: w.tip || '', color: w.color, t }); this.phaseId = w.id; }
   }
 
   onGenStart(sim) {

@@ -146,3 +146,86 @@ test('lineage gives parents and grandparents', () => {
   assert.ok(tree.parents[0] && tree.parents[1]);
   assert.ok(tree.parents[0].parents[0]);
 });
+
+// ---------- valley layout: both banks, fords, arrivals ----------
+import { BURROWS, FORDS, WATER_LIM, streamX, sideOf } from '../src/sim/valley.js';
+import { createSurvive } from '../src/sim/challenge.js';
+
+test('valley: warrens sit on both banks, clear of the water, inside the roam radius', () => {
+  assert.equal(BURROWS.filter((b) => b.side === 1).length, BURROWS.filter((b) => b.side === -1).length);
+  for (const b of BURROWS) {
+    assert.ok(Math.abs(b.x - streamX(b.z)) > WATER_LIM + 8, `burrow ${b.x},${b.z} is too close to the stream`);
+    assert.ok(Math.hypot(b.x, b.z) < P.ROAM - 8);
+  }
+  const sim = new Simulation({ seedCode: 'BANK01' });
+  assert.deepEqual(sim.burrows.map((b) => [b.x, b.z]), BURROWS.map((b) => [b.x, b.z]));
+});
+
+test('valley: the Survive founders start on both banks and the warren stays spread over both', () => {
+  for (const seed of ['BANK02', 'BANK03', 'BANK04']) {
+    const { sim } = createSurvive({ seedCode: seed });
+    const share = () => { const live = sim.alive(); return live.filter((r) => sideOf(r.x, r.z) === -1).length / live.length; };
+    assert.equal(share(), 0.5);
+    sim.advance(110);                                     // lush spring, before the foxes
+    assert.ok(sim.pop > 60, `pop ${sim.pop}`);
+    assert.ok(share() > 0.25 && share() < 0.75, `west share ${share().toFixed(2)} (${seed})`);
+  }
+});
+
+test('valley: rabbits keep out of the water unless they are crossing a ford', () => {
+  const { sim, challenge } = createSurvive({ seedCode: 'WATER1' });
+  let crossings = 0, astray = 0;
+  for (let i = 0; i < 1600; i++) {
+    sim.step(0.25);
+    if (i === 100) challenge.clover(-20, 10);            // a patch on the west bank pulls some rabbits across
+    for (const r of sim.rabbits) {
+      if (!r.alive) continue;
+      const off = Math.abs(r.x - streamX(r.z));
+      if (!r.wet) assert.ok(off >= WATER_LIM - 1e-6, `rabbit ${r.id} in the water (${off.toFixed(2)} m from the centre line)`);
+      else if (off < WATER_LIM) { crossings++; if (!FORDS.some((f) => Math.abs(r.z - f) < 1.5)) astray++; }   // astray = chased off a ford by a fox
+    }
+  }
+  assert.ok(crossings > 0, 'nobody used a ford');
+  assert.ok(astray < crossings * 0.2, `${astray} of ${crossings} wet samples were away from a ford`);
+});
+
+test('valley: a hop target across the stream is reached over a ford', () => {
+  const sim = new Simulation({ seedCode: 'FORD01', startPop: 1 });
+  const r = sim.rabbits[0];
+  const from = sideOf(r.x, r.z);
+  sim.setGoal(r, -30, 0); r.state = 'hop';
+  assert.equal(sideOf(-30, 0), -from);
+  assert.ok(r.route && r.route.length === 2);
+  let sawWet = false;
+  for (let i = 0; i < 400 && r.state === 'hop'; i++) { sim.move(0.1); sawWet ||= r.wet; }
+  assert.ok(sawWet);
+  assert.equal(sideOf(r.x, r.z), -from);
+  assert.ok(Math.hypot(r.x + 30, r.z) < 1);
+});
+
+test('translocation: newcomers walk in from the valley rim to a warren, and the event says where', () => {
+  const { sim, challenge } = createSurvive({ seedCode: 'ARRIVE' });
+  sim.drainEvents();
+  const res = challenge.translocate('alpine');
+  assert.equal(res.ok, true);
+  const ev = sim.drainEvents().find((e) => e.type === 'arrive');
+  assert.ok(ev && ev.ids.length === P.TRANSLOCATE_COUNT && ev.edge === 'north');
+  const rs = ev.ids.map((id) => sim.getRabbit(id));
+  for (const r of rs) assert.ok(Math.hypot(r.x, r.z) > P.ROAM - 6, 'starts at the rim');
+  sim.advance(9.5);                                       // still in generation 0: no fox, nothing to flee from
+  for (const r of rs) if (r.alive) assert.ok(Math.hypot(r.x, r.z) < P.ROAM - 12, 'has walked into the valley');
+  for (const r of rs) {
+    for (let i = 0; i < 400 && r.hurry; i++) sim.step(0.1);
+    assert.equal(r.hurry, false);
+    if (r.alive) assert.ok(Math.hypot(r.x - ev.toX, r.z - ev.toZ) < 8, 'reached its warren');
+  }
+});
+
+test('challenge: one phase event per valley change, in order', () => {
+  const { sim, challenge } = createSurvive({ seedCode: 'PHASE1', founders: Array.from({ length: 40 }, () => ({ fur: 'Bb', ears: 'Ee', teeth: 'Tt' })) });
+  const seen = [];
+  while (!sim.ended) { sim.advance(5); for (const e of sim.drainEvents()) if (e.type === 'phase') seen.push(e.id); }
+  const want = challenge.windows.slice(1).map((w) => w.id);
+  assert.deepEqual(seen, want.slice(0, seen.length));
+  assert.ok(seen.length >= 2);
+});
