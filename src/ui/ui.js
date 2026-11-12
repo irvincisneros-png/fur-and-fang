@@ -7,6 +7,7 @@ import { P } from '../sim/params.js';
 import { alleleFreq } from '../sim/history.js';
 import { GENE_INFO, genotypeLabel, ALLELE_TRAIT } from '../sim/genetics.js';
 import { Coach } from './coach.js';
+import { Tutorial } from './tutorial.js';
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const mobile = () => window.matchMedia('(max-width: 760px)').matches;
@@ -21,14 +22,14 @@ export class UI {
       pause: $('#btn-pause'), speed: $('#speed'), paused: $('#paused-badge'), banner: $('#place-banner'), bannerText: $('#place-text'), seed: $('#seed-badge'), end: $('#end'),
       event: $('#event-banner'), flash: $('#flash'), followBtn: $('#btn-follow'), followInfo: $('#follow-info'), followText: $('#follow-text'), followHint: $('#follow-hint'),
     };
-    this.coach = new Coach(this); this.pendingPhase = null; this.lastPanel = 0; this.followShown = undefined;
+    this.coach = new Coach(this); this.tutorial = new Tutorial(this); this.pendingPhase = null; this.lastPanel = 0; this.followShown = undefined;
     this.el.extinct = $('#extinct-banner');
     $('#extinct-restart').addEventListener('click', () => this.app.start('explore', this.app.sim.seedCode));
     $('#extinct-new').addEventListener('click', () => this.app.start('explore', null));
     this.el.followBtn.addEventListener('click', () => this.followRandom());
     $('#follow-next').addEventListener('click', () => this.followRandom());
     $('#follow-release').addEventListener('click', () => this.closeCard());
-    this.graph = new GraphPanel($('#graph-canvas'), $('#graph-readout'), $('#graph-legend'), () => ({ history: this.app.sim.history, sim: this.app.sim, challenge: this.app.challenge }));
+    this.graph = new GraphPanel($('#graph-canvas'), $('#graph-readout'), $('#graph-legend'), () => ({ history: this.app.sim.history, sim: this.app.sim, challenge: this.app.challenge?.tutorial ? null : this.app.challenge }));
     this.buildTabs();
     $('#btn-pause').addEventListener('click', () => this.setPaused(!this.app.paused));
     $('#btn-home').addEventListener('click', () => this.app.home());
@@ -44,9 +45,13 @@ export class UI {
       if (!this.el.title.classList.contains('show') && this.el.end.classList.contains('hidden')) {
         if (e.code === 'Space') { e.preventDefault(); this.setPaused(!this.app.paused); }
         else if (e.key === 'Escape') { this.endPlace(); this.closeCard(); }
+        else if (!e.ctrlKey && !e.metaKey && !e.altKey && this.app.world?.moveKey?.(e.code, true)) e.preventDefault();   // free view: WASD / arrows / Q E
       }
     });
-    window.addEventListener('resize', () => { this.app.world?.resize?.(); this.graph.draw(); this.syncInsets(); });
+    window.addEventListener('keyup', (e) => this.app.world?.moveKey?.(e.code, false));
+    window.addEventListener('blur', () => this.app.world?.clearKeys?.());
+    this.initCamHint();
+    window.addEventListener('resize', () => { this.app.world?.resize?.(); if (this.app.sim) this.graph.draw(); this.syncInsets(); });
     // click vs drag on whichever canvas is showing
     for (const c of [$('#gl'), $('#dbg')]) {
       let down = null;
@@ -60,18 +65,29 @@ export class UI {
     }
   }
 
+  // Small "how to move" chip above the dock. Dismissed once, it stays away on this device.
+  initCamHint() {
+    const el = $('#cam-hint'), KEY = 'ff-camhint-v1';
+    let seen = false; try { seen = localStorage.getItem(KEY) === 'done'; } catch { /* storage blocked */ }
+    if (seen) return;
+    const touch = window.matchMedia('(hover: none), (pointer: coarse)').matches;
+    $('#cam-hint-text').textContent = touch ? 'Move: drag · Rotate and zoom: two fingers' : 'Move: WASD / arrows · Rotate: Q E · Zoom: scroll';
+    $('#cam-hint-x').addEventListener('click', () => { el.classList.add('hidden'); try { localStorage.setItem(KEY, 'done'); } catch { /* storage blocked */ } });
+    el.classList.remove('hidden');
+  }
+
   // ---------- modes ----------
   startMode(mode) {
-    const sv = mode === 'survive';
+    const tut = mode === 'tutorial', sv = mode === 'survive' || tut;      // the tutorial uses the Survive HUD on a scripted valley
     this.el.title.classList.remove('show'); this.el.app.classList.remove('hidden'); this.el.end.classList.add('hidden');
     $('#forecast').classList.toggle('hidden', !sv); this.el.trustBox.classList.toggle('hidden', !sv);
     this.el.speed.classList.toggle('hidden', sv);
-    this.el.clockLbl.textContent = sv ? 'Time left' : 'Time';
+    this.el.clockLbl.textContent = sv && !tut ? 'Time left' : 'Time';
     this.endShown = false; clearTimeout(this.endTimer); clearTimeout(this.eventTimer); this.extinctNotified = false; this.lastGen = -1; this.pendingPhase = null;
     this.el.event.classList.add('hidden'); this.el.flash.classList.remove('go'); this.el.extinct.classList.add('hidden');
     this.el.speed.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === '1'));
     this.endPlace(); this.closeCard(); this.setPaused(false);
-    this.panel = sv ? buildSurvive(this.el.side, { app: this.app, ui: this }) : buildExplore(this.el.side, { app: this.app, ui: this });
+    this.panel = sv ? buildSurvive(this.el.side, { app: this.app, ui: this, tutorial: tut }) : buildExplore(this.el.side, { app: this.app, ui: this });
     this.el.toasts.innerHTML = '';
     document.body.classList.remove('panel-open', 'no-side');
     if (!mobile()) { /* desktop: side panel open */ } else this.toggleDrawer(false);
@@ -84,6 +100,8 @@ export class UI {
     const w = this.app.world;
     const b0 = this.app.sim.burrows[0];
     if (w.intro) w.intro(sv ? null : { x: b0.x - 6, z: b0.z, zoom: 0.62 }); else w.home?.();
+    if (tut) { this.coach.stop(false); this.tutorial.start(); return; }
+    this.tutorial.stop();
     const coaching = sv && this.coach.start();
     if (!sv) { this.coach.stop(false); this.toast('Two rabbits, one valley. Open the Controls to change the world, or plant a mutation. Click a rabbit to follow it.', 'info', 7000); }
     else if (!coaching) this.toast('Foxes arrive at about 2:00. Watch the forecast strip: it shows each change 20 seconds ahead.', 'info');
@@ -173,7 +191,7 @@ export class UI {
     if (e.id !== 'foxes') this.app.world?.pulse?.(0.16, 2.2);       // pull back a little so the whole valley change is in view
   }
   onFoxes(e) {
-    const w = this.app.world, sv = this.app.mode === 'survive';
+    const w = this.app.world, sv = this.app.mode !== 'explore';
     for (const a of e.added) w?.ping?.(a.x * 0.86, a.z * 0.86, 0xff8a3c, 9, 3);
     if (this.pendingPhase) { this.announce(this.pendingPhase); this.pendingPhase = null; w?.look?.(e.added[0].x * 0.8, e.added[0].z * 0.8, { amount: 0.55, hold: 3.4 }); }
     else if (sv && !e.first) this.toast(`Another fox has moved in: ${e.count} foxes now hunt the valley.`, 'bad');
@@ -226,7 +244,7 @@ export class UI {
 
   // ---------- pedigree card ----------
   showRabbit(id) {
-    this.cardId = id; this.cardGen = -1; this.app.world?.follow?.(id);
+    this.cardId = id; this.cardGen = -1; this.app.world?.follow?.(id); this.freeCam = false; this.followShown = undefined;
     this.el.card.classList.remove('hidden'); this.renderCard();
   }
   closeCard() { this.cardId = null; this.el.card.classList.add('hidden'); this.app.world?.follow?.(null); }
@@ -257,7 +275,9 @@ export class UI {
 
   // "Follow a rabbit" chip: what the camera is locked to and how to let go
   syncFollow() {
-    const sim = this.app.sim, r = this.cardId != null ? sim.getRabbit(this.cardId) : null;
+    const sim = this.app.sim, fb = this.app.world?.followBreaks;
+    if (fb !== this.seenBreaks) { if (this.seenBreaks !== undefined && fb !== undefined) this.freeCam = true; this.seenBreaks = fb; }   // the player moved the camera away: the card stays, the follow chip goes
+    const r = this.cardId != null && !this.freeCam ? sim.getRabbit(this.cardId) : null;
     const key = r ? `${r.id}:${r.alive}` : '';
     if (key === this.followShown) return; this.followShown = key;
     this.el.followBtn.classList.toggle('hidden', !!r); this.el.followInfo.classList.toggle('hidden', !r);
@@ -268,8 +288,8 @@ export class UI {
   // ---------- per-frame ----------
   refresh(force = false) {
     const { sim, challenge, mode } = this.app; if (!sim) return;
-    const sv = mode === 'survive';
-    this.el.clock.textContent = sv ? mmss(challenge.timeLeft) : mmss(sim.t);
+    const sv = mode !== 'explore', run = mode === 'survive';
+    this.el.clock.textContent = run ? mmss(challenge.timeLeft) : mmss(sim.t);
     this.el.gen.textContent = sim.gen;
     this.el.pop.textContent = sim.pop;
     if (sv) {
@@ -280,7 +300,8 @@ export class UI {
     this.el.seed.textContent = 'Seed ' + sim.seedCode;
     const now = performance.now();
     if (force || now - this.lastPanel > 200) { this.lastPanel = now; this.panel?.update?.(); this.syncFollow(); }
-    if (sv) this.coach.update(sim.t, this.app.paused);
+    if (run) this.coach.update(sim.t, this.app.paused);
+    this.tutorial.update();
     if (!this.el.drawer.classList.contains('hidden') && (force || sim.gen !== this.lastGen || now - this.lastGraphDraw > 500)) {
       if (this.graph.hoverGen == null) this.graph.draw();
       this.lastGraphDraw = now;
@@ -289,7 +310,7 @@ export class UI {
     this.lastGen = sim.gen;
     if (sim.ended && !this.endShown) {
       this.endShown = true;
-      if (sv) this.endTimer = setTimeout(() => { showEnd(this.el.end, { app: this.app }); }, sim.extinct ? 1800 : 600);
+      if (run) this.endTimer = setTimeout(() => { showEnd(this.el.end, { app: this.app }); }, sim.extinct ? 1800 : 600);
     }
   }
 }

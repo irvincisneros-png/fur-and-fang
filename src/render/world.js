@@ -7,6 +7,8 @@
 //   world.look(x, z, { zoom, hold })  camera glances at a spot and comes back      world.pulse(zoom)  brief pull-back
 //   world.setInsets({ left, top, right, bottom })  CSS px covered by UI: the valley is centred in what is left
 //   world.intro()  opening push-in      world.mark(ids, hex)  ring some rabbits for a few seconds
+//   world.moveKey(code, down) -> bool  free view: WASD / arrows pan, Q E rotate (the UI owns the key listeners)      world.clearKeys()
+//   world.travel  metres the player has moved the camera so far      world.followBreaks  times the player's own panning ended a follow
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { loadAll } from './models.js';
@@ -63,7 +65,7 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   controls.enableDamping = true; controls.dampingFactor = 0.08; controls.screenSpacePanning = false;
   controls.minDistance = 4; controls.maxDistance = 125; controls.maxPolarAngle = 1.46; controls.minPolarAngle = 0.12;
   controls.zoomSpeed = 0.9; controls.rotateSpeed = 0.7; controls.panSpeed = 0.9;
-  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };      // touch: one finger slides the view, two fingers turn and zoom
   const WIDE = { target: new THREE.Vector3(1, 1, 3), pos: new THREE.Vector3(-8, 25, 51) };
   const HOME = { target: WIDE.target.clone(), pos: WIDE.pos.clone() };      // close enough that rabbits read, wide enough for both banks
   controls.target.copy(HOME.target); camera.position.copy(HOME.pos); controls.update();
@@ -74,6 +76,31 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   const inset = { l: 0, t: 0, r: 0, b: 0, cx: 0, cy: 0 };
   controls.addEventListener('start', () => { userT = time; cue = null; intro = null; });
   const bump = (u, a, b) => smooth(0, a, u) * (1 - smooth(b, 1, u));
+  // free view: held keys ease a velocity for the orbit target (relative to where the camera faces) and a turn rate around it
+  const KEYS = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r', KeyQ: 'q', KeyE: 'e' };
+  const held = { f: 0, b: 0, l: 0, r: 0, q: 0, e: 0 }, vel = { x: 0, z: 0, rot: 0 };
+  const TARGET_LIM = VALLEY - 4, _last = new THREE.Vector3();
+  let travel = 0, followBreaks = 0;
+  function breakFollow() { if (followId != null) { followId = null; herd.followId = null; followBreaks++; } }
+  function freeView(rdt) {
+    const ix = held.r - held.l, iz = held.f - held.b, ir = held.e - held.q;
+    const ease = 1 - Math.exp(-rdt * 7);
+    let wx = 0, wz = 0;
+    if (ix || iz) {
+      camera.getWorldDirection(_tmp); const fl = Math.hypot(_tmp.x, _tmp.z) || 1, fx = _tmp.x / fl, fz = _tmp.z / fl;
+      const sp = clamp(camera.position.distanceTo(controls.target) * 0.5, 4, 45) / Math.hypot(ix, iz);    // faster when zoomed out
+      wx = (fx * iz - fz * ix) * sp; wz = (fz * iz + fx * ix) * sp;
+    }
+    vel.x += (wx - vel.x) * ease; vel.z += (wz - vel.z) * ease; vel.rot += (ir * 1.5 - vel.rot) * ease;
+    if (Math.abs(vel.x) + Math.abs(vel.z) > 0.01) {
+      const dx = vel.x * rdt, dz = vel.z * rdt;
+      controls.target.x += dx; controls.target.z += dz; camera.position.x += dx; camera.position.z += dz; travel += Math.hypot(dx, dz);
+    } else if (!ix && !iz) vel.x = vel.z = 0;
+    if (Math.abs(vel.rot) > 0.002) {
+      const a = vel.rot * rdt, c = Math.cos(a), s = Math.sin(a), ox = camera.position.x - controls.target.x, oz = camera.position.z - controls.target.z;
+      camera.position.x = controls.target.x + ox * c - oz * s; camera.position.z = controls.target.z + ox * s + oz * c; travel += Math.abs(a) * 8;
+    } else if (!ir) vel.rot = 0;
+  }
 
   // ---- state
   let qName = quality, tierIdx = quality === 'auto' ? 1 : TIERS.indexOf(quality), q = QUALITY[TIERS[Math.max(0, tierIdx)]];
@@ -173,7 +200,10 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       snow.points.visible = fall > 0.02 && q.snow > 0;
       snow.uni.uCenter.value.set(controls.target.x, 0, controls.target.z);
 
-      // ---- camera: follow, limits
+      // ---- camera: free view keys, follow, limits
+      const st = controls.state;                                        // -1 none, 0 rotate, 1 dolly, 2 pan, 3+ touch gestures
+      if (st === 2 || st === 4) breakFollow();                          // sliding the view lets go of the followed rabbit
+      freeView(rdt);
       if (followId != null) {
         const v = herd.position(followId);
         if (!v) followId = null;
@@ -202,9 +232,16 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       // ease the view offset toward the free part of the screen
       const icx = (inset.l - inset.r) / 2, icy = (inset.t - inset.b) / 2;
       if (Math.abs(icx - inset.cx) > 0.5 || Math.abs(icy - inset.cy) > 0.5) { const f = 1 - Math.exp(-rdt * 6); inset.cx += (icx - inset.cx) * f; inset.cy += (icy - inset.cy) * f; applyInset(); }
-      controls.target.x = clamp(controls.target.x, -VALLEY - 4, VALLEY + 4); controls.target.z = clamp(controls.target.z, -VALLEY - 4, VALLEY + 4);
+      // keep the target inside the valley (the camera shifts with it so the view does not swing)
+      const tr = Math.hypot(controls.target.x, controls.target.z);
+      if (tr > TARGET_LIM) {
+        const k2 = TARGET_LIM / tr, cdx = controls.target.x * (k2 - 1), cdz = controls.target.z * (k2 - 1);
+        controls.target.x += cdx; controls.target.z += cdz; camera.position.x += cdx; camera.position.z += cdz;
+        if (vel.x * controls.target.x + vel.z * controls.target.z > 0) { vel.x *= 0.5; vel.z *= 0.5; }
+      }
       if (followId == null) controls.target.y += (heightAt(controls.target.x, controls.target.z) + 0.8 - controls.target.y) * (1 - Math.exp(-dt * 4));
-      controls.update();
+      _last.copy(camera.position); controls.update();
+      travel += Math.min(4, camera.position.distanceTo(_last));          // what the player's own dragging (and its glide) moved this frame
       const gy = heightAt(camera.position.x, camera.position.z) + 1.2;
       if (camera.position.y < gy) camera.position.y = gy;
       sky.update(pal, SUN_DIR, dt, camera.position);
@@ -272,6 +309,16 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
 
     follow(id) { followId = id == null ? null : id; herd.followId = followId; if (followId != null) { followZoom = 1.4; cue = null; intro = null; } },
     get followId() { return followId; },
+    get followBreaks() { return followBreaks; },
+    get travel() { return travel; },
+    /** free view key (KeyboardEvent.code) pressed or released. True if it is a camera key. Pressing one takes the camera back from a follow or a cue. */
+    moveKey(code, down) {
+      const k = KEYS[code]; if (!k) return false;
+      held[k] = down ? 1 : 0;
+      if (down) { userT = time; cue = null; intro = null; breakFollow(); }
+      return true;
+    },
+    clearKeys() { for (const k in held) held[k] = 0; },
     setPreview(type, x, z, radius) {
       if (!type) { preview.show(false); return; }
       preview.style(PATCH_COL[type] || 0xffffff, 0.95, 0.2); preview.set(x, z, radius); preview.show(true);

@@ -25,6 +25,7 @@ export class Coach {
     document.querySelector('#app').append(this.el);
     window.addEventListener('resize', () => this.place());
   }
+  static markSeen() { try { localStorage.setItem(KEY, 'done'); } catch { /* storage blocked */ } }
   static seen() { try { return localStorage.getItem(KEY) === 'done'; } catch { return false; } }
   start(force = false) {
     this.hide(); this.i = 0; this.active = force || !Coach.seen(); this.forced = force;
@@ -68,7 +69,7 @@ export class Coach {
     let a = document.querySelector(s.anchor);
     const mobile = window.matchMedia('(max-width: 760px)').matches;
     if (a && s.panel && (mobile || document.body.classList.contains('no-side'))) a = document.querySelector('#btn-panel');   // the panel is tucked away: point at its button
-    if (a && a.offsetParent === null) a = null;
+    if (a && !a.getClientRects().length) a = null;      // hidden (offsetParent would also be null for fixed elements such as the forecast strip)
     if (a) { if (s.panel && a.id !== 'btn-panel') a.scrollIntoView({ block: 'nearest' }); a.classList.add('coach-target'); }
     this.target = a;
     requestAnimationFrame(() => this.place());

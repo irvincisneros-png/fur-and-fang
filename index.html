@@ -38,6 +38,12 @@
           <small>You are the valley ranger. Keep the warren alive for fifteen minutes while winter, foxes and a heatwave arrive. You cannot choose mutations. You can bring in new rabbits.</small>
           <span class="chip">7 valley events</span>
         </button>
+        <button class="mode-card" id="go-tutorial">
+          <span class="mode-kicker">New here? Start with this</span>
+          <b>Tutorial</b>
+          <small>Learn to move the camera, read a rabbit's genes, use the graphs and try the ranger tools. Seven short steps in a practice valley.</small>
+          <span class="chip">About 3 to 4 minutes</span>
+        </button>
       </div>
       <div class="title-foot">
         <label>Seed code <input id="seed-input" maxlength="6" placeholder="random" autocomplete="off" spellcheck="false" aria-label="Optional seed code" /></label>
@@ -79,6 +85,7 @@
     <div id="event-banner" class="hidden" role="status" aria-live="assertive"></div>
     <div id="flash" aria-hidden="true"></div>
     <div id="toasts" aria-live="polite"></div>
+    <div id="cam-hint" class="hidden"><span id="cam-hint-text"></span><button id="cam-hint-x" aria-label="Hide this hint">&times;</button></div>
     <div id="dock">
       <button class="btn small" id="btn-follow" title="Lock the camera to one rabbit">Follow a rabbit</button>
       <span id="follow-hint" class="dock-hint">or click one</span>
@@ -105,6 +112,15 @@
 
   <!-- End of run -->
   <div id="end" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Run report"></div>
+
+  <!-- Offered once, the first time Survive is opened -->
+  <div id="tut-offer" class="hidden" role="dialog" aria-modal="true" aria-labelledby="tut-offer-h">
+    <div class="offer-inner">
+      <h2 id="tut-offer-h">First time here?</h2>
+      <p>The tutorial takes about 3 minutes. It shows you how to move the camera, read a rabbit's genes and use the ranger tools.</p>
+      <div class="btn-row"><button class="btn primary" id="offer-tutorial">Play the tutorial</button> <button class="btn" id="offer-survive">Go straight to Survive</button></div>
+    </div>
+  </div>
 
   <noscript><p style="padding:2rem">Fur &amp; Fang needs JavaScript. Please turn it on and reload.</p></noscript>
   <script type="module" src="src/main.js"></script>

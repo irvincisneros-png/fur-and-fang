@@ -1,6 +1,8 @@
 // Fur & Fang: boot, app state, main loop.
 import { Simulation } from './sim/sim.js';
 import { createSurvive } from './sim/challenge.js';
+import { createTutorial } from './sim/tutorial.js';
+import { Tutorial } from './ui/tutorial.js';
 import { randomSeedCode } from './sim/rng.js';
 import { createDebugView } from './ui/debugView.js';
 import { UI } from './ui/ui.js';
@@ -12,16 +14,17 @@ const app = {
   mode: null, sim: null, challenge: null, world: null, paused: false, speed: 1, ui: null,
   async start(mode, seedCode) {
     const seed = (seedCode || '').trim().toUpperCase() || randomSeedCode();
-    if (mode === 'survive') { const r = createSurvive({ seedCode: seed }); app.sim = r.sim; app.challenge = r.challenge; }
+    if (mode === 'tutorial') { const r = createTutorial(); app.sim = r.sim; app.challenge = r.challenge; }
+    else if (mode === 'survive') { const r = createSurvive({ seedCode: seed }); app.sim = r.sim; app.challenge = r.challenge; }
     else { app.sim = new Simulation({ mode: 'explore', seedCode: seed }); app.challenge = null; }
     app.mode = mode; app.speed = 1;
     await ensureWorld();
-    app.world.follow?.(null);
+    app.world.follow?.(null); app.world.clearKeys?.();
     app.ui.startMode(mode);
     app.world.resize?.();
   },
   home() {
-    app.ui.setPaused(true);
+    app.ui.setPaused(true); app.ui.tutorial.stop(); app.world?.clearKeys?.();
     $('#app').classList.add('hidden'); $('#end').classList.add('hidden'); $('#title').classList.add('show');
   },
 };
@@ -76,7 +79,19 @@ function frame(now) {
 
 app.ui = new UI(app);
 $('#go-explore').addEventListener('click', () => app.start('explore', $('#seed-input').value));
-$('#go-survive').addEventListener('click', () => app.start('survive', $('#seed-input').value));
+$('#go-tutorial').addEventListener('click', () => app.start('tutorial'));
+// First Survive launch on this device: offer the tutorial once.
+const OFFER_KEY = 'ff-tutorial-offer-v1';
+let offered = false;
+try { offered = localStorage.getItem(OFFER_KEY) === 'done'; } catch { /* storage blocked: offer once per visit */ }
+const closeOffer = (mode) => { $('#tut-offer').classList.add('hidden'); app.start(mode, mode === 'survive' ? $('#seed-input').value : null); };
+$('#go-survive').addEventListener('click', () => {
+  if (offered || Tutorial.seen()) { app.start('survive', $('#seed-input').value); return; }
+  offered = true; try { localStorage.setItem(OFFER_KEY, 'done'); } catch { /* storage blocked */ }
+  $('#tut-offer').classList.remove('hidden'); $('#offer-tutorial').focus();
+});
+$('#offer-tutorial').addEventListener('click', () => closeOffer('tutorial'));
+$('#offer-survive').addEventListener('click', () => closeOffer('survive'));
 $('#title').classList.add('show');
 requestAnimationFrame(frame);
-if (params.get('mode') === 'explore' || params.get('mode') === 'survive') app.start(params.get('mode'), params.get('seed'));
+if (['explore', 'survive', 'tutorial'].includes(params.get('mode'))) app.start(params.get('mode'), params.get('seed'));

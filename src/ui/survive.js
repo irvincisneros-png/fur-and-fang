@@ -8,7 +8,7 @@ const SRC_ORDER = ['alpine', 'desert', 'river'];
 const FREQ_ROWS = [['b', 'Fur: white (b)', COLORS.b], ['e', 'Ears: long (e)', COLORS.e], ['T', 'Teeth: long (T)', COLORS.T]];
 
 export function buildSurvive(root, ctx) {
-  const { app, ui } = ctx;
+  const { app, ui, tutorial } = ctx;
   const ch = () => app.challenge;
   root.innerHTML = '';
   const els = {};
@@ -44,7 +44,7 @@ export function buildSurvive(root, ctx) {
     h('p', { class: 'note', text: 'You cannot choose mutations. Habitat and gene flow are your tools, and each costs trust. Read the forecast: variation has to exist before the pressure arrives.' }),
     els.translocate, els.clover, els.shelter, els.fence,
     h('div', { class: 'row' }, gv, h('label', { for: 'gv2', text: 'Genotype view' })),
-    h('div', { class: 'btn-row' }, h('button', { class: 'btn small', text: 'Show the tips again', onclick: () => { ui.coach.start(true); } }), h('button', { class: 'btn small', text: 'Restart this seed', onclick: () => app.start('survive', app.sim.seedCode) }), h('button', { class: 'btn small', text: 'New seed', onclick: () => app.start('survive', null) })));
+    tutorial ? '' : h('div', { class: 'btn-row' }, h('button', { class: 'btn small', text: 'Show the tips again', onclick: () => { ui.coach.start(true); } }), h('button', { class: 'btn small', text: 'Restart this seed', onclick: () => app.start('survive', app.sim.seedCode) }), h('button', { class: 'btn small', text: 'New seed', onclick: () => app.start('survive', null) })));
 
   function run(res, okMsg) {
     if (!res.ok) ui.toast(res.reason, 'bad'); else if (okMsg) ui.toast(okMsg, 'good');   // translocation announces itself when the rabbits appear
