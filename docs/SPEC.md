@@ -103,6 +103,13 @@ bars per event, 3 auto-generated "what happened" sentences (e.g. "During the lon
 4 % to 71 %: brown rabbits were 2.8× more likely to be caught on snow."), and 3 reflection questions
 (typed answers, kept locally, printable/copy button).
 
+## Tutorial (added 2026-11-13)
+Third title card, about 3 to 4 minutes, also offered once on the first Survive launch. A scripted practice valley
+(`src/sim/tutorial.js`: 24 mixed BB / Bb / bb founders, scenes `meadow | hunt | calm | front`, no time limit, topped up so it cannot die out,
+no cooldowns, trust granted by the script). Steps live in `src/content/tutorial.js`; each has a goal the student must do before Next unlocks:
+move the camera, open a rabbit card, watch foxes catch 10 rabbits on snow, open the Cause of death graph, find a Bb carrier in genotype
+view, translocate, prepare for a forecast cold front, then start Survive. Back and Skip on every step.
+
 ## Explore mode extras (improvements over PhET)
 - **Genotype view toggle**: labels/colour rings show BB / Bb / bb; carriers highlighted (PhET mostly hides
   heterozygotes in the main view).
@@ -129,7 +136,8 @@ shadows, soft sky gradient with puffy clouds, fog to a colour.
 - **Fox** (Survive) / **wolf** (Explore toggle may use fox too — keep one predator model: a red fox):
   trot/chase cycle, catches with a pounce; the rabbit is removed with a small dust puff (no gore).
 - Death cues: cold = curl up + frost then fade; starved = thin + fade; old age = lie down, fade.
-- Camera: orbit with limits, scroll zoom, click-to-follow a rabbit. Quality tiers low/high/ultra (auto by
+- Camera: free view (WASD / arrows pan relative to facing with eased speed scaled by zoom, Q E rotate, scroll zoom, drag orbit;
+  touch: one finger pans, two fingers rotate and zoom; target clamped inside the valley), click-to-follow a rabbit (any move key lets go). Quality tiers low/high/ultra (auto by
   fps; low drops shadows + outlines). Must work at 375 px wide.
 
 ## UI
