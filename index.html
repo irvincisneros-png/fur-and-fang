@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Fur &amp; Fang: A Natural Selection Simulator</title>
+  <meta name="description" content="Fur & Fang: watch rabbits adapt to snow, heat, foxes and tough food. A free natural selection simulator for NSW Stage 5 science. Runs in the browser, nothing is uploaded." />
+  <meta name="theme-color" content="#f6efdc" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bubblegum+Sans&family=Mulish:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/build/three.module.js", "three/examples/jsm/": "./vendor/three/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <canvas id="gl" aria-label="Valley view"></canvas>
+  <canvas id="dbg" class="hidden" aria-label="Valley view (2D)"></canvas>
+
+  <!-- Title -->
+  <main id="title" class="screen">
+    <div class="title-inner">
+      <header>
+        <h1>Fur <span>&amp;</span> Fang</h1>
+        <p class="tagline">A field journal about who lives, who dies, and why.</p>
+      </header>
+      <div class="mode-cards">
+        <button class="mode-card" id="go-explore">
+          <span class="mode-kicker">Teacher-led sandbox</span>
+          <b>Explore</b>
+          <small>Two rabbits in a valley. Change the snow, the heat, the food and the foxes, then watch the graphs. Plant mutations, switch dominance, break the warren with a bottleneck.</small>
+          <span class="chip">Full control</span>
+        </button>
+        <button class="mode-card" id="go-survive">
+          <span class="mode-kicker">Student challenge</span>
+          <b>Survive 15:00</b>
+          <small>You are the valley ranger. Keep the warren alive for fifteen minutes while winter, foxes and a heatwave arrive. You cannot choose mutations. You can bring in new rabbits.</small>
+          <span class="chip">7 valley events</span>
+        </button>
+      </div>
+      <div class="title-foot">
+        <label>Seed code <input id="seed-input" maxlength="6" placeholder="random" autocomplete="off" spellcheck="false" aria-label="Optional seed code" /></label>
+        <span class="hint">Same seed, same valley. Share it to replay a run.</span>
+      </div>
+      <p class="small-print">For NSW Stage 5 Science: evolution by natural selection. Runs in your browser; nothing is uploaded.</p>
+    </div>
+  </main>
+
+  <!-- Game -->
+  <div id="app" class="hidden">
+    <header id="topbar">
+      <button class="btn small" id="btn-home" title="Back to the title screen">Menu</button>
+      <div class="stat"><span class="lbl" id="clock-lbl">Time</span><b id="clock">0:00</b></div>
+      <div class="stat"><span class="lbl">Generation</span><b id="gen">0</b></div>
+      <div class="stat"><span class="lbl">Rabbits</span><b id="pop">2</b></div>
+      <div class="stat survive-only hidden" id="trust-box"><span class="lbl">Trust</span><b id="trust">12</b></div>
+      <div class="spacer"></div>
+      <div class="seg explore-only" id="speed" role="group" aria-label="Speed">
+        <button data-s="0.5">0.5&times;</button><button data-s="1" class="on">1&times;</button><button data-s="2">2&times;</button><button data-s="4">4&times;</button>
+      </div>
+      <button class="btn small" id="btn-pause" aria-label="Pause (Space)">Pause</button>
+      <button class="btn small" id="btn-panel">Controls</button>
+      <button class="btn small" id="btn-graphs">Graphs</button>
+    </header>
+
+    <div id="forecast" class="hidden" aria-live="polite">
+      <span class="fc-now" id="fc-now"></span>
+      <span class="fc-next" id="fc-next"></span>
+    </div>
+
+    <aside id="side" class="panel">
+      <div id="side-body"></div>
+    </aside>
+
+    <div id="place-banner" class="hidden"><span id="place-text"></span> <button class="btn small" id="place-cancel">Cancel</button></div>
+    <div id="toasts" aria-live="polite"></div>
+    <button id="seed-badge" title="Seed code. Click to copy.">Seed</button>
+    <div id="paused-badge" class="hidden">Paused (Space to resume)</div>
+
+    <section id="rabbit-card" class="card hidden" aria-label="Rabbit details"></section>
+
+    <section id="drawer" class="drawer hidden" aria-label="Graphs">
+      <div class="drawer-head">
+        <div class="tabs" id="graph-tabs" role="tablist"></div>
+        <div class="chips" id="pop-chips"></div>
+        <button class="x" id="drawer-close" aria-label="Close graphs">&times;</button>
+      </div>
+      <canvas id="graph-canvas"></canvas>
+      <div class="legend" id="graph-legend"></div>
+      <div class="readout" id="graph-readout"></div>
+    </section>
+  </div>
+
+  <!-- End of run -->
+  <div id="end" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Run report"></div>
+
+  <noscript><p style="padding:2rem">Fur &amp; Fang needs JavaScript. Please turn it on and reload.</p></noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

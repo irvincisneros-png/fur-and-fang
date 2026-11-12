@@ -1,0 +1,11 @@
+{
+  "name": "fur-and-fang",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A 3D natural-selection simulator for NSW Stage 5 science (evolution by natural selection).",
+  "scripts": {
+    "serve": "python3 devserver.py 8500",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

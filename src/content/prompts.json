@@ -1,0 +1,50 @@
+[
+  {
+    "id": "snow-melts",
+    "title": "When the snow melts",
+    "predict": "A warren lives on deep snow and most rabbits are white. The snow melts away. What happens to white fur over the next generations?",
+    "run": "Press \"Set up\", plant a white-fur mutation (teacher button), let the white allele spread in the snow, then slide Snow down to 0 and run 5 generations.",
+    "explain": "Use the cause-of-death graph: who is caught now, and why? Was white fur ever \"good\" on its own?",
+    "setup": { "env": { "snow": 0.9, "temp": -0.3, "food": 120, "tough": 0 }, "predators": 3, "plant": ["fur"] }
+  },
+  {
+    "id": "cold-snap",
+    "title": "A cold snap",
+    "predict": "Some rabbits have long ears, some short. A hard cold snap arrives. Which ear length do you expect to become more common, and what will the graph show?",
+    "run": "Press \"Set up\", then run 8 generations. Watch the Allele frequency graph for e (long ears).",
+    "explain": "Long ears lose body heat. Use the cause-of-death bars to point to the evidence for your explanation.",
+    "setup": { "env": { "snow": 0.4, "temp": -0.8, "food": 150, "tough": 0 }, "predators": 0, "plant": ["ears"] }
+  },
+  {
+    "id": "tough-food",
+    "title": "Woody food",
+    "predict": "Grass dries and most of the food becomes tough and woody. Which teeth will help, and how fast will the change spread?",
+    "run": "Press \"Set up\". Pick which allele is dominant for teeth and run 10 generations. Try again with the other dominance setting.",
+    "explain": "Why did the speed change when dominance changed? What happens to carriers?",
+    "setup": { "env": { "snow": 0, "temp": 0.1, "food": 100, "tough": 0.8 }, "predators": 0, "plant": ["teeth"] }
+  },
+  {
+    "id": "random-mutation",
+    "title": "Do mutations appear on demand?",
+    "predict": "Predators arrive. Will white-fur mutations appear because the rabbits need to hide? Predict how many mutations appear per generation.",
+    "run": "Set the mutation rate to 3 %, add predators and run 10 generations. Count the mutation toasts and look at which ones helped.",
+    "explain": "Were mutations more common when they would help? What does selection do to the mutations that already exist?",
+    "setup": { "env": { "snow": 0.9, "temp": 0, "food": 150, "tough": 0 }, "predators": 3, "mutationRate": 0.03 }
+  },
+  {
+    "id": "bottleneck",
+    "title": "Chance and the bottleneck",
+    "predict": "A storm wipes out 90 % of a large warren at random. Will the survivors have the same mix of alleles as before? Predict what happens to a rare allele.",
+    "run": "Let the warren grow to 150+ with a high mutation rate, then press Bottleneck. Repeat from the same seed code and compare.",
+    "explain": "Nothing about the survivors was \"better\". What is this called, and how is it different from natural selection?",
+    "setup": { "env": { "snow": 0, "temp": 0, "food": 200, "tough": 0 }, "predators": 0, "mutationRate": 0.04 }
+  },
+  {
+    "id": "carriers",
+    "title": "Hidden carriers",
+    "predict": "White fur is recessive. A few rabbits carry one white allele (Bb) but look brown. Will predators on grass remove the white allele completely?",
+    "run": "Turn on Genotype view. Plant a white-fur mutation, add predators on bare grass, and run 15 generations. Watch Bb rabbits.",
+    "explain": "Where does the white allele hide? How does it survive when bb rabbits are eaten? Try making white dominant and compare.",
+    "setup": { "env": { "snow": 0, "temp": 0, "food": 150, "tough": 0 }, "predators": 2, "plant": ["fur"], "genotypeView": true }
+  }
+]
