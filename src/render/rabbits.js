@@ -7,7 +7,7 @@ import { heightAt, inStream, waterLevelAt } from './terrain.js';
 import { FUR, GENOTYPE_COLORS, clamp, lerp, smooth, hashId } from './palette.js';
 
 const CAP = 960;
-export const RABBIT_SCALE = 1.7;      // stylised: rabbits are drawn ~1.7x life-size so a 120 m valley still reads
+export const RABBIT_SCALE = 1.9;      // stylised: rabbits are drawn ~1.9x life-size so a 120 m valley still reads
 const HIP = [-0.14, 0.30], EAR = [0.27, 0.585, 0.075], GUM = [0.585, 0.352], PIV = [-0.05, 0.26];
 const BROWN = new THREE.Color(FUR.brown), WHITE = new THREE.Color(FUR.white);
 const RING = { BB: new THREE.Color(GENOTYPE_COLORS.BB), Bb: new THREE.Color(GENOTYPE_COLORS.Bb), bb: new THREE.Color(GENOTYPE_COLORS.bb) };

@@ -7,7 +7,7 @@ import { heightAt, inStream, waterLevelAt } from './terrain.js';
 import { clamp, lerp, smooth } from './palette.js';
 
 const NECK = [0.60, 0.74], TAILB = [-0.50, 0.64], TAIL_MID = [-0.40, -0.03], HIPS = [[0.40, 0.15], [0.40, -0.15], [-0.40, 0.15], [-0.40, -0.15]];   // [x, z]; y = 0.5
-const SCALE = 1.7, MAX = 10;
+const SCALE = 1.85, MAX = 10;
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 
 export class Foxes {

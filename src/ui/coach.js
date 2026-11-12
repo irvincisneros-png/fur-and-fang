@@ -64,7 +64,7 @@ export class Coach {
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn small primary', text: last ? 'Got it' : 'Next tip', onclick: () => this.next() }),
         !last && h('button', { class: 'btn small', text: 'Skip tips', onclick: () => this.stop() })));
-    this.el.classList.remove('hidden');
+    this.el.style.visibility = 'hidden'; this.el.classList.remove('hidden');     // shown once place() has put it beside its target
     let a = document.querySelector(s.anchor);
     const mobile = window.matchMedia('(max-width: 760px)').matches;
     if (a && s.panel && (mobile || document.body.classList.contains('no-side'))) a = document.querySelector('#btn-panel');   // the panel is tucked away: point at its button
@@ -76,6 +76,7 @@ export class Coach {
 
   place() {
     if (!this.shown) return;
+    this.el.style.visibility = '';
     const el = this.el, a = this.target, vw = window.innerWidth, vh = window.innerHeight;
     el.dataset.side = 'none'; el.style.left = el.style.top = '';
     if (!a || vw <= 760) { el.dataset.side = a ? 'up' : 'none'; el.classList.add('docked'); this.arrow(a); return; }

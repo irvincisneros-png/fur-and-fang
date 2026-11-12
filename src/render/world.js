@@ -64,7 +64,8 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   controls.minDistance = 4; controls.maxDistance = 125; controls.maxPolarAngle = 1.46; controls.minPolarAngle = 0.12;
   controls.zoomSpeed = 0.9; controls.rotateSpeed = 0.7; controls.panSpeed = 0.9;
   controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-  const HOME = { target: new THREE.Vector3(1, 1, 3), pos: new THREE.Vector3(-9, 27, 55) };      // close enough that rabbits read, wide enough for both banks
+  const WIDE = { target: new THREE.Vector3(1, 1, 3), pos: new THREE.Vector3(-8, 25, 51) };
+  const HOME = { target: WIDE.target.clone(), pos: WIDE.pos.clone() };      // close enough that rabbits read, wide enough for both banks
   controls.target.copy(HOME.target); camera.position.copy(HOME.pos); controls.update();
   let followId = null, followZoom = 0;
   // camera cues: a glance toward a spot (and back) or a short pull-back. Applied as per-frame deltas so the player's own orbiting still works;
@@ -290,7 +291,10 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       if (snap) { inset.cx = (left - right) / 2; inset.cy = (top - bottom) / 2; applyInset(); }
     },
     home() { cue = null; intro = null; controls.target.copy(HOME.target); camera.position.copy(HOME.pos); controls.update(); },
-    intro() {
+    /** opening push-in. With a focus {x, z, zoom} the resting view is centred there and closer (Explore starts on its first pair of rabbits). */
+    intro(focus) {
+      HOME.target.copy(WIDE.target); HOME.pos.copy(WIDE.pos);
+      if (focus) { HOME.target.set(focus.x, 1, focus.z); HOME.pos.copy(WIDE.pos).sub(WIDE.target).multiplyScalar(focus.zoom || 0.6).add(HOME.target); }
       cue = null; controls.target.copy(HOME.target);
       intro = { t: 0, dur: 2.6, from: HOME.pos.clone().sub(HOME.target).multiplyScalar(1.75).add(HOME.target).add(new THREE.Vector3(26, 10, 0)) };
       camera.position.copy(intro.from); controls.update();

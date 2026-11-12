@@ -144,7 +144,7 @@ export function createSurvive(opts = {}) {
 }
 
 // ---------- run report ----------
-const CAUSE_PHRASE = { predator: 'caught by foxes', cold: 'to die of cold', heat: 'to die of heat', starved: 'to starve', old: 'to die of old age' };
+const CAUSE_PHRASE = { predator: 'to be caught by foxes', cold: 'to die of cold', heat: 'to die of heat', starved: 'to starve', old: 'to die of old age' };
 const ALLELE_NAME = { b: ['white fur', 'brown fur', 'fur'], e: ['long ears', 'short ears', 'ears'], T: ['long teeth', 'short teeth', 'teeth'] };
 const RELEVANT = { b: ['predator'], e: ['cold', 'heat', 'predator'], T: ['starved'] };
 const RABBIT_WORD = { white: 'white', brown: 'brown', longEars: 'long-eared', shortEars: 'short-eared', longTeeth: 'long-toothed', shortTeeth: 'short-toothed' };

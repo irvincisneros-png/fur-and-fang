@@ -82,7 +82,8 @@ export class UI {
     this.syncTabs();
     this.syncInsets(true);
     const w = this.app.world;
-    if (w.intro) w.intro(); else w.home?.();
+    const b0 = this.app.sim.burrows[0];
+    if (w.intro) w.intro(sv ? null : { x: b0.x - 6, z: b0.z, zoom: 0.62 }); else w.home?.();
     const coaching = sv && this.coach.start();
     if (!sv) { this.coach.stop(false); this.toast('Two rabbits, one valley. Open the Controls to change the world, or plant a mutation. Click a rabbit to follow it.', 'info', 7000); }
     else if (!coaching) this.toast('Foxes arrive at about 2:00. Watch the forecast strip: it shows each change 20 seconds ahead.', 'info');
