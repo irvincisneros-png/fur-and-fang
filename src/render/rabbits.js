@@ -11,6 +11,9 @@ export const RABBIT_SCALE = 1.9;      // stylised: rabbits are drawn ~1.9x life-
 const HIP = [-0.14, 0.30], EAR = [0.27, 0.585, 0.075], GUM = [0.585, 0.352], PIV = [-0.05, 0.26];
 const BROWN = new THREE.Color(FUR.brown), WHITE = new THREE.Color(FUR.white);
 const RING = { BB: new THREE.Color(GENOTYPE_COLORS.BB), Bb: new THREE.Color(GENOTYPE_COLORS.Bb), bb: new THREE.Color(GENOTYPE_COLORS.bb) };
+// Islands lineage view: West teal, East amber, Islet violet, mixed ancestry white, sterile grey
+export const LINEAGE_COLORS = { 1: 0x1f9e8f, 2: 0xe8a33a, 4: 0x8e6cc8, mixed: 0xffffff, sterile: 0x8a8a8a };
+const LIN = Object.fromEntries(Object.entries(LINEAGE_COLORS).map(([k, v]) => [k, new THREE.Color(v)]));
 const easeOutBack = (t) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 
@@ -62,7 +65,7 @@ export class Herd {
     this.blobMat = new THREE.MeshBasicMaterial({ color: 0x1b3320, transparent: true, opacity: 0.28, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, fog: false });
     this.blobs = new THREE.InstancedMesh(bg, this.blobMat, CAP); this.blobs.count = 0; this.blobs.frustumCulled = false; this.blobs.visible = false; this.blobs.renderOrder = 1;
     this.group.add(this.blobs);
-    this.genotypeView = false; this.followId = null; this.useBlob = false;
+    this.genotypeView = false; this.lineageView = false; this.followId = null; this.useBlob = false;
     this._m = { b: new THREE.Matrix4(), d: new THREE.Matrix4(), t: new THREE.Matrix4(), q: new THREE.Matrix4(), e: new THREE.Matrix4() };
     this._c = new THREE.Color();
   }
@@ -142,9 +145,11 @@ export class Herd {
       if (!v.dying && (r.alive === false || r.state === 'dying')) this.startDying(v, r.dyingCause || this.causes.get(r.id));
       if (!v.dying) {
         this._sync(v, r);
+        v.org = r.org || 0; v.sterile = !!r.sterile;
+        if (r.carry) { const c = r.carry, u = clamp(c.t / c.dur); v.x = lerp(c.fromX, c.toX, u); v.z = lerp(c.fromZ, c.toZ, u); v.arcY = Math.sin(Math.PI * u) * 3.2; v.spin = u * 6.283; } else { v.arcY = 0; v.spin = 0; }
         // follow the sim position smoothly (the sim ticks in steps)
         const dx = r.x - v.x, dz = r.z - v.z;
-        if (dx * dx + dz * dz > 100) { v.x = r.x; v.z = r.z; v.px = v.x; v.pz = v.z; } else { const k = 1 - Math.exp(-dt * 11); v.x += dx * k; v.z += dz * k; }
+        if (r.carry) { /* drawn along the carry arc */ } else if (dx * dx + dz * dz > 100) { v.x = r.x; v.z = r.z; v.px = v.x; v.pz = v.z; } else { const k = 1 - Math.exp(-dt * 11); v.x += dx * k; v.z += dz * k; }
         v.tState = r.state;
         v.tSize = ((r.age || 0) < 1 ? 0.62 : 1) * RABBIT_SCALE;
       }
@@ -159,11 +164,12 @@ export class Herd {
     let nRing = 0, nBlob = 0;
     const del = [];
     const { b, d, t: tt, q, e } = this._m;
-    const useRing = this.genotypeView;
+    const useRing = this.genotypeView || this.lineageView;
     for (const [id, v] of this.v) {
       if (v.dying) { v.dying.t += dt; if (v.dying.t >= v.dying.dur) { del.push(id); continue; } }
       this._pose(v, dt, t);
       if (v.out) continue;
+      if (v.arcY) { v.y += v.arcY; v.yawR += v.spin; }
       const i = P.body.n;
       if (i >= CAP) break;
       // instance matrices
@@ -179,9 +185,10 @@ export class Herd {
       e.copy(b).multiply(this._earM(tt, d, 1, v.eR, v.splay)); this._put(v.longEars ? P.earLR : P.earSR, e, fur, fx);
       e.copy(b).multiply(tt.makeTranslation(GUM[0], GUM[1], 0)).multiply(q.makeScale(1, v.teeth * (v.longTeeth ? 1.45 : 0.4), v.longTeeth ? 1.25 : 1)).multiply(tt.makeTranslation(-GUM[0], -GUM[1], 0)); this._put(P.teeth, e, fur, fx);
       if (useRing && !v.dying) {
-        const s = v.size * (v.geno === 'Bb' ? 1.12 + 0.06 * Math.sin(t * 3 + v.h * 9) : 1.0) * (0.9 + 0.1 * v.pop);
+        const s = v.size * (!this.lineageView && v.geno === 'Bb' ? 1.12 + 0.06 * Math.sin(t * 3 + v.h * 9) : 1.0) * (0.9 + 0.1 * v.pop);
         tt.makeTranslation(v.x, this._ringY(v, s), v.z).multiply(q.makeScale(s, 1, s));
-        this.rings.setMatrixAt(nRing, tt); this.rings.instanceColor.setXYZ(nRing, RING[v.geno].r, RING[v.geno].g, RING[v.geno].b); nRing++;
+        const rc = this.lineageView ? (v.sterile ? LIN.sterile : LIN[v.org] || LIN.mixed) : RING[v.geno];
+        this.rings.setMatrixAt(nRing, tt); this.rings.instanceColor.setXYZ(nRing, rc.r, rc.g, rc.b); nRing++;
       }
       if (this.useBlob) { tt.makeTranslation(v.x, v.y + 0.04, v.z).multiply(q.makeScale(v.size * 1.2 * v.sx, 1, v.size * 0.9 * v.sz)).multiply(e.makeRotationY(v.yawR)); this.blobs.setMatrixAt(nBlob++, tt); }
       const mk = this.marks.get(id);

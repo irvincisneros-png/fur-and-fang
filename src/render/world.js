@@ -43,6 +43,8 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   const sky = createSky(); scene.add(sky.group);
   const terrain = buildTerrain(); scene.add(terrain);
   const stream = buildStream(); scene.add(stream);
+  const channel = buildStream({ channel: true }); channel.visible = false; scene.add(channel);
+  const RS = [{ snow: 0, temp: 0, dry: 0 }, { snow: 0, temp: 0, dry: 0 }, { snow: 0, temp: 0, dry: 0 }];
   const props = createProps(models.flora, QUALITY.high); scene.add(props.group);
   const snow = createSnow(QUALITY.ultra.snow); scene.add(snow.points);
   const puffs = createPuffs(); scene.add(puffs.points);
@@ -105,7 +107,7 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   // ---- state
   let qName = quality, tierIdx = quality === 'auto' ? 1 : TIERS.indexOf(quality), q = QUALITY[TIERS[Math.max(0, tierIdx)]];
   if (tierIdx < 0) { tierIdx = 1; qName = 'high'; q = QUALITY.high; }
-  let prCap = 2, time = 0, genotypeView = false, disposed = false;
+  let prCap = 2, time = 0, genotypeView = false, lineageView = false, disposed = false;
   const S = { snow: 0, temp: 0, food: 100, tough: 0 }; let foodRef = 60, dry = 0, heat = 0, firstEnv = true;
   const stats = { fps: 60, quality: TIERS[tierIdx], rabbits: 0, drawCalls: 0, triangles: 0 };
   let fpsAcc = 0, fpsN = 0, slowWin = 0, grace = 3.0, lodAt = 260;      // herds bigger than lodAt use the cheap rabbit meshes
@@ -177,6 +179,25 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       const dryT = clamp(Math.max(0, S.temp) * 0.85 + (1 - foodN) * 0.55 * clamp(S.temp + 0.6) + S.tough * 0.2 * Math.max(0, S.temp));
       dry += (dryT * (1 - S.snow * 0.8) - dry) * k;
       U.uSnow.value = S.snow; U.uTemp.value = S.temp; U.uDry.value = dry;
+      // ---- Islands: per-land weather and the water
+      const isl = sim.isl;
+      U.uIsl.value = isl ? 1 : 0;
+      const su = stream.material.uniforms, cu = channel.material.uniforms;
+      if (isl) {
+        isl.regions.forEach((reg, i) => {
+          const e = reg.env, R = RS[i], kk = k;
+          const dT = clamp(Math.max(0, e.temp) * 0.85 + e.tough * 0.25 * Math.max(0, e.temp) + (e.food < 40 ? 0.2 : 0) * clamp(e.temp + 0.6)) * (1 - e.snow * 0.8);
+          R.snow += (e.snow - R.snow) * kk; R.temp += (e.temp - R.temp) * kk; R.dry += (dT - R.dry) * kk;
+        });
+        U.uRegSnow.value.set(RS[0].snow, RS[1].snow, RS[2].snow); U.uRegTemp.value.set(RS[0].temp, RS[1].temp, RS[2].temp); U.uRegDry.value.set(RS[0].dry, RS[1].dry, RS[2].dry);
+        const rl = isl.riverLevel, cl = isl.channelLevel;
+        su.uHalfW.value = 4.05 + (7.6 - 4.05) * rl; su.uLift.value = 1.05 * rl; su.uSilt.value = rl;
+        su.uIce.value = isl.water.river === 0 && RS[0].snow > 0.6 && RS[1].snow > 0.6 && RS[0].temp < -0.4 ? 0.85 : 0;
+        channel.visible = cl > 0.002;
+        cu.uHalfW.value = 3.4 * clamp(cl * 2.5); cu.uFill.value = cl * 1.15; cu.uLift.value = 0.25 * cl; cu.uSilt.value = 0.6 * cl;
+      } else {
+        su.uHalfW.value = 4.05; su.uLift.value = 0; su.uSilt.value = 0; su.uIce.value = 0; channel.visible = false;
+      }
       const pal = skyPalette(S.snow, S.temp, dry);
       hemi.color.copy(pal.hemiS); hemi.groundColor.copy(pal.hemiG); hemi.intensity = pal.hemiI;
       sun.color.copy(pal.sun); sun.intensity = pal.sunI;
@@ -185,7 +206,7 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
 
       // ---- actors
       herd.followId = followId;
-      herd.genotypeView = genotypeView;
+      herd.genotypeView = genotypeView; herd.lineageView = lineageView && !!sim.isl;
       const nR = (sim.rabbits || []).length;
       herd.setOutlines(q.outlines && (TIERS[tierIdx] === 'ultra' || nR <= 320));
       // cheap rabbit meshes for the low tier and for big herds seen from afar; close-ups (following a rabbit) get the full model back
@@ -351,7 +372,8 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
       intro = { t: 0, dur: 2.6, from: HOME.pos.clone().sub(HOME.target).multiplyScalar(1.75).add(HOME.target).add(new THREE.Vector3(26, 10, 0)) };
       camera.position.copy(intro.from); controls.update();
     },
-    setGenotypeView(on) { genotypeView = !!on; },
+    setGenotypeView(on) { genotypeView = !!on; if (on) lineageView = false; },
+    setLineageView(on) { lineageView = !!on; if (on) genotypeView = false; },
 
     dispose() {
       disposed = true;

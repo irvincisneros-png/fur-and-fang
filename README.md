@@ -14,3 +14,14 @@ Query flags: `?mode=explore|survive|tutorial&seed=ABC123` skips the title; `?vie
 - `src/sim/` pure logic (no DOM): params, rng, genetics, sim, challenge, history, valley (stream, burrows and fords, shared with the renderer), tutorial (the scripted practice valley: scenes, forecast, top-ups; separate from `createSurvive`, so Survive balance is untouched).
 - `src/ui/` DOM and canvas graphs, 2D fallback view. `src/content/prompts.json` holds the six predict-observe-explain prompts; `src/content/tutorial.js` holds the tutorial steps (words and targets), run by `src/ui/tutorial.js`.
 - `src/render/` the 3D world (separate owner).
+
+## Islands update (speciation)
+
+Spec: `docs/specs/2026-11-13-islands.md`. Two new title-screen modes:
+
+- **Islands** (`?mode=islands`): a lab with six predict-observe-explain investigations. Flood the river or the side channel to split the valley into West, East and an islet, give each land its own climate, test-cross the populations, reopen the crossing and watch hybrid kits (born alive? able to breed?), storm castaways onto the islet (founder effect) and run 20 quick islands to see drift. CSV by land.
+- **Two Lineages 10:00** (`?mode=lineages`): a flood splits the warren, one bank freezes while the other bakes, the student keeps both lineages alive, predicts at 7:30 whether they are still one species, then the reunion gives the answer.
+
+Code: `src/sim/islands.js` (`IslandSim` subclasses `Simulation`; classic modes are untouched, enforced by `tests/golden.test.mjs`), `src/sim/lineages.js`, `src/ui/islands.js`, `src/ui/lineages.js`, `src/content/islands.js`. Land membership changes only at generation boundaries, so runs replay identically at any frame rate.
+
+Known gap: Two Lineages survival is close to 40-65 % for every strategy (mostly starvation luck), so spec targets B1 to B4 are not met yet. The outcome spread (B5) and the gene-flow effect (B6) are tested.

@@ -26,3 +26,16 @@ export const ARRIVE_FROM = {
   desert: { angle: 0, edge: 'east' },
   river: { angle: Math.PI / 2 + 0.6, edge: 'south-west' },
 };
+
+// ---------- Islands update: a side channel (an old creek bed) and three fixed lands ----------
+// The channel leaves the stream at z0 and rejoins it at z1, bulging east; between the two waters sits the islet.
+export const CHANNEL = { z0: -10, z1: 22, bulge: 26 };
+export const channelX = (z) => streamX(z) + CHANNEL.bulge * Math.sin(Math.PI * (z - CHANNEL.z0) / (CHANNEL.z1 - CHANNEL.z0));
+export const inChannelSpan = (z) => z > CHANNEL.z0 && z < CHANNEL.z1;
+export const REGION_NAMES = ['West', 'East', 'Islet'];
+// 0 = West (west of the stream), 2 = Islet (between stream and channel), 1 = East (everything else east of the stream)
+export function regionOf(x, z) {
+  if (x < streamX(z)) return 0;
+  if (inChannelSpan(z) && x < channelX(z)) return 2;
+  return 1;
+}

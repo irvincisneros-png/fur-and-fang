@@ -5,6 +5,8 @@ import * as THREE from 'three';
 export const U = {
   uSnow: { value: 0 }, uTemp: { value: 0 }, uDry: { value: 0 }, uTime: { value: 0 },
   uSnowCol: { value: new THREE.Color(0xf3f8ff) }, uOutScale: { value: 1 },
+  // Islands: per-land weather (West, East, Islet). uIsl = 0 leaves every shader exactly as in the classic modes.
+  uIsl: { value: 0 }, uRegSnow: { value: new THREE.Vector3() }, uRegTemp: { value: new THREE.Vector3() }, uRegDry: { value: new THREE.Vector3() },
 };
 
 export const NOISE_GLSL = /* glsl */`
@@ -12,9 +14,24 @@ float hash21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); r
 float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
   return mix(mix(hash21(i), hash21(i+vec2(1,0)), f.x), mix(hash21(i+vec2(0,1)), hash21(i+vec2(1,1)), f.x), f.y); }
 float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ s += a*vnoise(p); p = p*2.03 + 7.1; a *= 0.5; } return s; }
+// @@REGION (everything below needs the paint uniforms)
+uniform float uIsl; uniform vec3 uRegSnow; uniform vec3 uRegTemp; uniform vec3 uRegDry;
+// Same curves as src/sim/valley.js (streamX, channelX with CHANNEL {z0:-10, z1:22, bulge:26}).
+float rStreamX(float z){ return -9.0 + 15.0*sin(z*0.043 + 0.9) + 5.0*sin(z*0.11 + 2.0); }
+vec3 regW(vec2 p){
+  float sx = rStreamX(p.y), w = smoothstep(-1.5, 1.5, sx - p.x);
+  float span = smoothstep(-10.0, -8.0, p.y)*(1.0 - smoothstep(20.0, 22.0, p.y));
+  float cx = sx + 26.0*sin(3.14159265*(p.y + 10.0)/32.0);
+  float wi = (1.0 - w)*span*smoothstep(-1.5, 1.5, cx - p.x);
+  return vec3(w, 1.0 - w - wi, wi);
+}
+float eSnow(vec2 p){ return uIsl < 0.5 ? uSnow : dot(regW(p), uRegSnow); }
+float eTemp(vec2 p){ return uIsl < 0.5 ? uTemp : dot(regW(p), uRegTemp); }
+float eDry(vec2 p){ return uIsl < 0.5 ? uDry : dot(regW(p), uRegDry); }
 float snowCover(vec2 xz, float ny, float wet){
   float n = fbm(xz*0.075 + 11.0);
-  float s = uSnow*1.3 + (n-0.5)*0.78*(1.0-0.5*uSnow) + (ny-0.85)*0.55 - wet*0.4;
+  float uS = eSnow(xz);
+  float s = uS*1.3 + (n-0.5)*0.78*(1.0-0.5*uS) + (ny-0.85)*0.55 - wet*0.4;
   return smoothstep(0.52, 0.6, s);
 }
 `;
@@ -51,9 +68,9 @@ vCov = 0.0;
   #endif
   float cov = snowCover(iw.xz, 1.0, 0.0); vCov = cov;
   #ifdef P_FLOWER
-  transformed *= clamp(1.0 - uDry*1.7 - cov*1.6, 0.0, 1.0);
+  transformed *= clamp(1.0 - eDry(iw.xz)*1.7 - cov*1.6, 0.0, 1.0);
   #else
-  transformed.y *= 1.0 - 0.5*cov; transformed.xz *= 1.0 - 0.15*uDry;
+  transformed.y *= 1.0 - 0.5*cov; transformed.xz *= 1.0 - 0.15*eDry(iw.xz);
   #endif
 }
 #endif`)
@@ -98,16 +115,16 @@ varying vec4 vFx;
   base *= 0.88 + 0.16*vNY;
   #ifdef P_FOLIAGE
   float gr = clamp((base.g - max(base.r, base.b))*7.0, 0.0, 1.0);
-  base = mix(base, base*vec3(1.35, 1.0, 0.5) + vec3(0.04, 0.025, 0.0), gr*uDry*0.6);
-  base = mix(base, base*vec3(0.82, 0.94, 1.12), gr*clamp(-uTemp, 0.0, 1.0)*0.55);
+  base = mix(base, base*vec3(1.35, 1.0, 0.5) + vec3(0.04, 0.025, 0.0), gr*eDry(vWP.xz)*0.6);
+  base = mix(base, base*vec3(0.82, 0.94, 1.12), gr*clamp(-eTemp(vWP.xz), 0.0, 1.0)*0.55);
   #endif
   #ifdef P_SNOWCAPS
-  float thr = 1.0 - uSnow*0.95;
-  float cap = smoothstep(thr - 0.14, thr + 0.04, vNY + (fbm(vWP.xz*1.4 + vWP.y*0.9) - 0.5)*0.4) * smoothstep(0.04, 0.22, uSnow);
+  float lSnow = eSnow(vWP.xz), thr = 1.0 - lSnow*0.95;
+  float cap = smoothstep(thr - 0.14, thr + 0.04, vNY + (fbm(vWP.xz*1.4 + vWP.y*0.9) - 0.5)*0.4) * smoothstep(0.04, 0.22, lSnow);
   base = mix(base, uSnowCol*(0.86 + 0.14*vNY), cap);
   #endif
   #ifdef P_GRASS
-  base = mix(base, base*vec3(1.5, 1.15, 0.55) + vec3(0.08, 0.05, 0.0), uDry*0.85);
+  base = mix(base, base*vec3(1.5, 1.15, 0.55) + vec3(0.08, 0.05, 0.0), eDry(vWP.xz)*0.85);
   base = mix(base, uSnowCol*0.92, vCov*0.75);
   #endif
   #ifdef P_FX

@@ -297,6 +297,39 @@ body.tutorial #paused-badge, body.tutorial #cam-hint, body.tutorial #seed-badge 
 .mutlog { background: var(--paper2); border: 2px solid var(--ink); border-radius: 12px; padding: 4px 10px; margin: 6px 0; font-size: 0.85rem; }
 .mutlog .sum-list { padding-left: 0; list-style: none; font-size: 0.82rem; }
 .geno-legend { font-size: 0.82rem; font-weight: 700; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; }
+
+/* Islands lab */
+.poe textarea { width: 100%; border: 2px solid var(--ink); border-radius: 8px; background: #fff; padding: 6px 8px; font-size: 0.9rem; resize: vertical; margin: 2px 0 6px; }
+.poe .steps { margin: 4px 0 6px; padding-left: 20px; font-size: 0.88rem; font-weight: 600; }
+.poe .steps li.done { color: var(--green); }
+.poe-q { font-size: 0.9rem; font-weight: 600; margin: 6px 0 2px; }
+.btn.primary { background: var(--gold); }
+.isl-map { width: 100%; max-width: 260px; height: auto; display: block; margin: 6px auto; border: 2px solid var(--ink); border-radius: 10px; background: var(--paper2); }
+.cross-col { display: grid; gap: 6px; margin: 6px 0; }
+.cross-col .btn { text-align: left; min-height: 40px; }
+.cross-col .btn.on { background: #cfe6ef; }
+.carry-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.carry-row select { border: 2px solid var(--ink); border-radius: 8px; padding: 4px 6px; background: var(--paper2); font-weight: 700; }
+.land { border-left: 6px solid var(--ink); padding: 4px 0 4px 10px; margin: 8px 0; }
+.meter { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; margin: 6px 0; }
+.meter .m-lbl { grid-column: 1 / -1; font-weight: 800; font-size: 0.86rem; }
+.meter .m-bar { height: 14px; border: 2px solid var(--ink); border-radius: 8px; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(43,42,40,0.25) calc(10% - 1px) 10%), var(--paper2); overflow: hidden; }
+.meter .m-bar i { display: block; height: 100%; background: var(--ink2); transition: width 0.4s; }
+.meter .m-val { font-weight: 800; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.cross-table table, .found-card table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 6px 0; }
+.cross-table th, .cross-table td, .found-card th, .found-card td { border-bottom: 1px solid var(--line); padding: 3px 4px; text-align: left; font-variant-numeric: tabular-nums; }
+.f-box { background: var(--paper2); border: 2px solid var(--ink); border-radius: 12px; padding: 6px 10px; margin: 6px 0; }
+.f-title { display: block; font-size: 0.86rem; margin-bottom: 4px; }
+.f-row { display: grid; grid-template-columns: 9.5em 1fr 3em; gap: 6px; align-items: center; font-size: 0.82rem; font-weight: 700; margin: 3px 0; }
+.f-row i { height: 10px; background: var(--blue); border-radius: 5px; min-width: 2px; }
+.f-row b { text-align: right; font-variant-numeric: tabular-nums; }
+.verdict { font-weight: 800; font-size: 0.9rem; margin: 4px 0; }
+.dotplot { width: 100%; height: auto; display: block; border: 2px solid var(--ink); border-radius: 10px; background: var(--paper2); margin: 6px 0; }
+.isl-charts { display: grid; gap: 6px; }
+.isl-charts canvas { width: 100%; height: auto; border: 2px solid var(--ink); border-radius: 10px; background: var(--paper2); }
+.legend-line { font-size: 0.8rem; font-weight: 800; margin: 4px 0; }
+.legend-line .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--ink); margin-right: 3px; vertical-align: -1px; }
+.limits ul { margin: 4px 0; padding-left: 18px; font-size: 0.84rem; }
 .gl-item { white-space: nowrap; } .gl-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); margin-right: 4px; vertical-align: -2px; }
 .save-note.warn { color: var(--red); font-weight: 800; }
 #btn-big.on { background: var(--ink); color: var(--paper2); }
@@ -310,3 +343,11 @@ body.big-text #tutor, body.big-text #coach { width: min(440px, calc(100vw - 16px
 body.big-text .toast { font-size: 1.05rem; }
 .abar { font-size: 0.85rem; }
 @media (max-width: 760px) { html:has(body.big-text) { font-size: 17px; } body.big-text { --side-w: 100vw; } }
+.act-col { display: grid; gap: 6px; margin: 6px 0; }
+.act-col .btn.act { text-align: left; min-height: 40px; }
+.banks .bar-row { display: grid; grid-template-columns: 7.5em 1fr 3em; gap: 6px; align-items: center; font-size: 0.8rem; font-weight: 700; }
+.banks .bar { height: 10px; border: 1.5px solid var(--ink); border-radius: 6px; background: var(--paper2); overflow: hidden; display: block; }
+.banks .bar b { display: block; height: 100%; }
+.predict-card { position: fixed; inset: 0; z-index: 60; overflow: auto; padding: 24px 16px; }
+.predict-card .pick.on { outline: 4px solid var(--gold); }
+.predict-card textarea { width: 100%; border: 2px solid var(--ink); border-radius: 8px; padding: 8px; margin: 10px 0; background: #fff; }
