@@ -78,7 +78,7 @@ export class IslandSim extends Simulation {
     this.isl = {
       regions: REGION_NAMES.map((name, i) => ({ id: i, name, env: { ...base, food: foods[i], ...(islands.envs?.[i] || {}) }, cap: I.CAP_SHARE[i], fenceUntil: -1 })),
       water, pending: null, riverLevel: water.river, channelLevel: water.channel, midLevel: water.midFord,
-      pops: [], dist: {}, crosses: [], splitGen: null, apartGens: 0, splitAt: {}, queue: [],
+      subRate: islands.subRate ?? null, pops: [], dist: {}, crosses: [], splitGen: null, apartGens: 0, splitAt: {}, queue: [],
       stats: { conceived: 0, born: 0, fertile: 0, stillborn: 0, sterileBorn: 0, sameConceived: 0, sameBorn: 0, sameFertile: 0 },
       reunion: null, regBirths: [0, 0, 0], regDeaths: [{}, {}, {}],
     };
@@ -95,7 +95,7 @@ export class IslandSim extends Simulation {
       const r = this.spawn(g, { age: 1 + (i % 2), x: b.x + this.mrng.range(-3, 3), z: b.z + this.mrng.range(-3, 3), parents: [0, 0], silent: true, home: bi });
       this._clampToRegion(r, b.region, b);
     }
-    for (const r of this.rabbits) r.org = 1 << this.popOfRegion(r.region);
+    for (const r of this.rabbits) r.org = this.lineageBit(r.region);
     if (this.isl.pops.length > 1) this.isl.splitGen = 0;   // built already split
   }
 
@@ -107,6 +107,8 @@ export class IslandSim extends Simulation {
     const L = linksOpen(this.isl.water), k = [a, b].sort().join('');
     return k === '01' ? L.WE : k === '02' ? L.WI : L.IE;
   }
+  // lineage tag of a population: the bit of its lowest land (1 West, 2 East, 4 Islet), so colours stay with the land
+  lineageBit(reg) { return 1 << this.isl.pops[this.popOfRegion(reg)].regions[0]; }
   reachable(a, b) { return this.popOfRegion(a) === this.popOfRegion(b); }
   riverHalf() { return STREAM_W + (I.FLOOD_W - STREAM_W) * this.isl.riverLevel; }
   channelHalf() { return I.CHANNEL_W * this.isl.channelLevel; }
@@ -164,7 +166,7 @@ export class IslandSim extends Simulation {
       S.pops = this._pops();
       if (S.pops.length > before) {
         S.splitGen = this.gen;
-        for (const r of this.rabbits) if (r.alive) r.org = 1 << this.popOfRegion(r.region);   // membership, not position: frame-rate independent
+        for (const r of this.rabbits) if (r.alive) r.org = this.lineageBit(r.region);   // membership, not position: frame-rate independent
         this.events.push({ type: 'split', pops: S.pops.map((p) => ({ name: p.name, regions: p.regions })), gen: this.gen, t: this.t });
       } else if (S.pops.length < before) {
         const joined = oldPops.filter((op) => !S.pops.some((np) => np.regions.join() === op.regions.join())).map((p) => p.name);
@@ -212,7 +214,7 @@ export class IslandSim extends Simulation {
     const S = this.isl;
     if (S.pops.length < 2) return;
     for (let pi = 0; pi < S.pops.length; pi++) {
-      if (this.crng.next() >= I.SUB_RATE) continue;
+      if (this.crng.next() >= (S.subRate ?? I.SUB_RATE)) continue;
       const live = this.rabbits.filter((r) => r.alive);
       const members = live.filter((r) => S.pops[pi].regions.includes(r.region));
       if (!members.length) continue;
@@ -431,7 +433,7 @@ export class IslandSim extends Simulation {
     const before = composition(this.rabbits.filter((r) => r.alive && src.regions.includes(r.region)));
     const founders = composition(pick);
     const f = (c) => ({ b: alleleFreq(c, 'b'), e: alleleFreq(c, 'e'), T: alleleFreq(c, 'T') });
-    for (const r of pick) { this._moveTo(r, 2); r.org = 1 << this.popOfRegion(2); }
+    for (const r of pick) { this._moveTo(r, 2); r.org = this.lineageBit(2); }
     this.isl.lastStorm = { gen: this.gen, ids: pick.map((r) => r.id), founders: f(founders), source: f(before), n: pick.length };
     this.events.push({ type: 'storm', ids: pick.map((r) => r.id), fromPop: src.name, to: 'Islet', founders: f(founders), source: f(before), gen: this.gen });
   }
