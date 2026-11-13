@@ -343,3 +343,11 @@ body.big-text #tutor, body.big-text #coach { width: min(440px, calc(100vw - 16px
 body.big-text .toast { font-size: 1.05rem; }
 .abar { font-size: 0.85rem; }
 @media (max-width: 760px) { html:has(body.big-text) { font-size: 17px; } body.big-text { --side-w: 100vw; } }
+.act-col { display: grid; gap: 6px; margin: 6px 0; }
+.act-col .btn.act { text-align: left; min-height: 40px; }
+.banks .bar-row { display: grid; grid-template-columns: 7.5em 1fr 3em; gap: 6px; align-items: center; font-size: 0.8rem; font-weight: 700; }
+.banks .bar { height: 10px; border: 1.5px solid var(--ink); border-radius: 6px; background: var(--paper2); overflow: hidden; display: block; }
+.banks .bar b { display: block; height: 100%; }
+.predict-card { position: fixed; inset: 0; z-index: 60; overflow: auto; padding: 24px 16px; }
+.predict-card .pick.on { outline: 4px solid var(--gold); }
+.predict-card textarea { width: 100%; border: 2px solid var(--ink); border-radius: 8px; padding: 8px; margin: 10px 0; background: #fff; }

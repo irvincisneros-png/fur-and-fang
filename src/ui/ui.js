@@ -4,6 +4,7 @@ import { GraphPanel, TABS, POP_MODES, setGraphScale } from './graphs.js';
 import { buildExplore } from './explore.js';
 import { buildSurvive, updateForecast, showEnd } from './survive.js';
 import { buildIslands } from './islands.js';
+import { buildLineages, showPrediction, showLineagesEnd } from './lineages.js';
 import { P } from '../sim/params.js';
 import { alleleFreq } from '../sim/history.js';
 import { GENE_INFO, genotypeLabel, ALLELE_TRAIT } from '../sim/genetics.js';
@@ -109,16 +110,17 @@ export class UI {
 
   // ---------- modes ----------
   startMode(mode) {
-    const tut = mode === 'tutorial', sv = mode === 'survive' || tut;      // the tutorial uses the Survive HUD on a scripted valley
+    const tut = mode === 'tutorial', lin = mode === 'lineages', sv = mode === 'survive' || tut || lin;      // the tutorial uses the Survive HUD on a scripted valley
     this.el.title.classList.remove('show'); this.el.app.classList.remove('hidden'); this.el.end.classList.add('hidden');
     $('#forecast').classList.toggle('hidden', !sv); this.el.trustBox.classList.toggle('hidden', !sv);
     this.el.speed.classList.toggle('hidden', sv);
     this.el.clockLbl.textContent = sv && !tut ? 'Time left' : 'Time';
+    document.getElementById('predict')?.classList.add('hidden');
     this.endShown = false; this.cancelEnd(); clearTimeout(this.eventTimer); this.mutByGen.clear(); this.routine = []; this.extinctNotified = false; this.lastGen = -1; this.pendingPhase = null;
     this.el.event.classList.add('hidden'); this.el.flash.classList.remove('go'); this.el.extinct.classList.add('hidden');
     this.el.speed.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === '1'));
     this.endPlace(); this.closeCard(); this.setPaused(false);
-    this.panel = sv ? buildSurvive(this.el.side, { app: this.app, ui: this, tutorial: tut }) : mode === 'islands' ? buildIslands(this.el.side, { app: this.app, ui: this }) : buildExplore(this.el.side, { app: this.app, ui: this });
+    this.panel = lin ? buildLineages(this.el.side, { app: this.app, ui: this }) : sv ? buildSurvive(this.el.side, { app: this.app, ui: this, tutorial: tut }) : mode === 'islands' ? buildIslands(this.el.side, { app: this.app, ui: this }) : buildExplore(this.el.side, { app: this.app, ui: this });
     this.app.world?.setLineageView?.(false); this.islFirst = {};
     this.el.toasts.innerHTML = '';
     document.body.classList.remove('panel-open', 'no-side');            // Controls start in the normal state of this layout and mode
@@ -134,8 +136,9 @@ export class UI {
     if (w.intro) w.intro(sv ? null : { x: b0.x - 6, z: b0.z, zoom: 0.62 }); else w.home?.();
     if (tut) { this.coach.stop(false); this.tutorial.start(); return; }
     this.tutorial.stop();
-    const coaching = sv && this.coach.start();
-    if (mode === 'islands') { this.coach.stop(false); this.toast(this.app.sim.isl.pops.length > 1 ? `The valley starts split: ${this.app.sim.isl.pops.map((p) => p.name).join(' and ')}. Follow the investigation on the left.` : 'One valley, one population. Use the Water controls to split it.', 'info', 7000); }
+    const coaching = mode === 'survive' && this.coach.start();
+    if (lin) { this.coach.stop(false); this.toast('A flood is coming at about 1:30. It will split the warren in two. Keep both lineages alive until the water drops at 8:00.', 'info', 9000); }
+    else if (mode === 'islands') { this.coach.stop(false); this.toast(this.app.sim.isl.pops.length > 1 ? `The valley starts split: ${this.app.sim.isl.pops.map((p) => p.name).join(' and ')}. Follow the investigation on the left.` : 'One valley, one population. Use the Water controls to split it.', 'info', 7000); }
     else if (!sv) { this.coach.stop(false); this.toast('Two rabbits, one valley. Open the Controls to change the world, or plant a mutation. Click a rabbit to follow it.', 'info', 7000); }
     else if (!coaching) this.toast('Foxes arrive at about 2:00. Watch the forecast strip: it shows each change 20 seconds ahead.', 'info');
   }
@@ -227,7 +230,9 @@ export class UI {
       else if (e.type === 'phase') { if (e.id === 'foxes' && !this.app.sim.predators.length) this.pendingPhase = e; else this.announce(e); }
       else if (e.type === 'foxin') this.onFoxes(e);
       else if (e.type === 'arrive') this.onArrive(e);
-      else if (this.app.mode === 'islands') this.onIslands(e);
+      else if (e.type === 'predict') showPrediction(this.app, this);
+      else if (e.type === 'lineagelost') this.toast(`The ${e.name} lineage has died out. With one lineage left there is nothing to compare.`, 'bad', 10000);
+      else if (this.app.mode === 'islands' || this.app.mode === 'lineages') this.onIslands(e);
     }
     const others = muts - shown;
     if (others > 0) this.toast(`+${others} other random mutation${others > 1 ? 's' : ''}`, 'mut small', 3000);
@@ -357,7 +362,7 @@ export class UI {
   // ---------- per-frame ----------
   refresh(force = false) {
     const { sim, challenge, mode } = this.app; if (!sim) return;
-    const sv = mode === 'survive' || mode === 'tutorial', run = mode === 'survive';
+    const sv = mode === 'survive' || mode === 'tutorial' || mode === 'lineages', run = mode === 'survive' || mode === 'lineages';
     this.el.clock.textContent = run ? mmss(challenge.timeLeft) : mmss(sim.t);
     this.el.gen.textContent = sim.gen;
     this.el.pop.textContent = sim.pop;
@@ -369,7 +374,7 @@ export class UI {
     this.el.seed.textContent = 'Seed ' + sim.seedCode;
     const now = performance.now();
     if (force || now - this.lastPanel > 200) { this.lastPanel = now; this.panel?.update?.(); this.syncFollow(); }
-    if (run) this.coach.update(sim.t, this.app.paused);
+    if (mode === 'survive') this.coach.update(sim.t, this.app.paused);
     this.tutorial.update();
     if (!this.el.drawer.classList.contains('hidden') && (force || sim.gen !== this.lastGen || now - this.lastGraphDraw > 500)) {
       if (this.graph.hoverGen == null) this.graph.draw();
@@ -381,7 +386,7 @@ export class UI {
       this.endShown = true;
       if (run) {
         const simAtEnd = sim; this.endSim = sim;
-        this.endTimer = setTimeout(() => { if (this.endSim === simAtEnd && this.app.sim === simAtEnd && !this.el.title.classList.contains('show')) showEnd(this.el.end, { app: this.app }); }, sim.extinct ? 1800 : 600);
+        this.endTimer = setTimeout(() => { if (this.endSim === simAtEnd && this.app.sim === simAtEnd && !this.el.title.classList.contains('show')) { if (mode === 'lineages') showLineagesEnd(this.el.end, this.app); else showEnd(this.el.end, { app: this.app }); } }, sim.extinct ? 1800 : 600);
       }
     }
   }

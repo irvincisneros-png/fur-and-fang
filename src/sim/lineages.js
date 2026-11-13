@@ -185,7 +185,8 @@ export function buildLineagesReport(ch) {
     questions: [
       'The two banks started with the same alleles. Why did they end up different? Use one piece of evidence from each graph.',
       'At the moment of the flood, were there two species? What changed between then and the reunion, and what did not?',
-      `Your result was "${v ? (v.label.band === 'one' ? 'still one species' : v.label.band === 'two' ? 'two species' : 'in between') : 'unknown'}". What would you need to observe to be more sure? Why do biologists sometimes disagree about whether two populations are one species?`,
+      v ? `Your result was "${v.label.band === 'one' ? 'still one species' : v.label.band === 'two' ? 'two species' : 'in between'}". What would you need to observe to be more sure? Why do biologists sometimes disagree about whether two populations are one species?`
+        : 'If both lineages had survived to the reunion, what would you have needed to observe to decide whether they were still one species?',
     ],
   };
 }

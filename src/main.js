@@ -3,6 +3,7 @@ import { Simulation } from './sim/sim.js';
 import { createSurvive } from './sim/challenge.js';
 import { createTutorial } from './sim/tutorial.js';
 import { createIslandsLab } from './sim/islands.js';
+import { createLineages } from './sim/lineages.js';
 import { Tutorial } from './ui/tutorial.js';
 import { randomSeedCode } from './sim/rng.js';
 import { createDebugView } from './ui/debugView.js';
@@ -17,6 +18,7 @@ const app = {
     const seed = (seedCode || '').trim().toUpperCase() || randomSeedCode();
     if (mode === 'tutorial') { const r = createTutorial(); app.sim = r.sim; app.challenge = r.challenge; }
     else if (mode === 'survive') { const r = createSurvive({ seedCode: seed }); app.sim = r.sim; app.challenge = r.challenge; }
+    else if (mode === 'lineages') { const r = createLineages({ seedCode: seed }); app.sim = r.sim; app.challenge = r.challenge; }
     else if (mode === 'islands') {
       app.sim = createIslandsLab({ seedCode: seed, scenario: opts.scenario || 'open', envs: opts.envs });
       app.challenge = null; app.islandsReopenAt = opts.reopenAt ?? null; app.islandsCarries = 0;
@@ -65,7 +67,7 @@ function frame(now) {
   const raw = (now - last) / 1000, dt = Math.min(0.1, raw); last = now;
   const { sim, world } = app;
   if (!sim || !world || $('#app').classList.contains('hidden')) return;
-  const simDt = app.paused || sim.ended ? 0 : dt * (app.mode === 'survive' ? 1 : app.speed);
+  const simDt = app.paused || sim.ended ? 0 : dt * (app.mode === 'survive' || app.mode === 'lineages' ? 1 : app.speed);
   if (simDt > 0) sim.step(simDt);
   const events = sim.drainEvents();
   if (events.length) app.ui.onEvents(events);
@@ -86,6 +88,7 @@ function frame(now) {
 app.ui = new UI(app);
 $('#go-explore').addEventListener('click', () => app.start('explore', $('#seed-input').value));
 $('#go-tutorial').addEventListener('click', () => app.start('tutorial'));
+$('#go-lineages').addEventListener('click', () => app.start('lineages', $('#seed-input').value));
 $('#go-islands').addEventListener('click', () => { app.islandsInv = 0; app.start('islands', $('#seed-input').value, { scenario: 'flood', envs: [{ snow: 0.9, temp: -0.7, tough: 0, predators: 5 }, { snow: 0, temp: 0.8, tough: 0.7, predators: 4 }, { snow: 0, temp: 0.8, tough: 0.7, predators: 4 }] }); });
 // First Survive launch on this device: offer the tutorial once.
 const OFFER_KEY = 'ff-tutorial-offer-v1';
@@ -101,4 +104,4 @@ $('#offer-tutorial').addEventListener('click', () => closeOffer('tutorial'));
 $('#offer-survive').addEventListener('click', () => closeOffer('survive'));
 $('#title').classList.add('show');
 requestAnimationFrame(frame);
-if (['explore', 'survive', 'tutorial', 'islands'].includes(params.get('mode'))) app.start(params.get('mode'), params.get('seed'));
+if (['explore', 'survive', 'tutorial', 'islands', 'lineages'].includes(params.get('mode'))) app.start(params.get('mode'), params.get('seed'));
