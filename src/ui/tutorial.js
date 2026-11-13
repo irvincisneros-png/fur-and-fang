@@ -4,10 +4,13 @@ import { h } from './dom.js';
 import { TUTORIAL_STEPS as STEPS, TUTORIAL_NOTES as NOTES } from '../content/tutorial.js';
 import { genotypeLabel } from '../sim/genetics.js';
 import { Coach } from './coach.js';
+import { TUTORIAL_SCENES } from '../sim/tutorial.js';
 
 const KEY = 'ff-tutorial-v1';
 const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
 const isTouch = () => window.matchMedia('(hover: none), (pointer: coarse)').matches;
+// When the cold front lands (the forecast counts down to this moment). Preparing after it is too late.
+const st_front = (st, sim, s) => { st.frontT = sim.t + (TUTORIAL_SCENES[s.scene]?.delay || 0); st.late = false; };
 const shown = (el) => !!el && el.getClientRects().length > 0;
 
 export class Tutorial {
@@ -38,6 +41,7 @@ export class Tutorial {
     const s = this.step, ui = this.ui, { challenge: ch, world: w, sim } = ui.app;
     this.st = { travel: w?.travel, log: ch.log.length, nextId: sim.nextId, done: !s.done, note: '', t0: performance.now(), markAt: 0 };
     if (s.scene) ch.setScene(s.scene);
+    if (s.done === 'prepare') st_front(this.st, sim, s);
     ui.endPlace();
     ui.toggleDrawer(false);
     if (s.done === 'causes') { ui.graph.setTab('population'); ui.syncTabs(); }
@@ -56,6 +60,7 @@ export class Tutorial {
     this.setTarget(null);
     this.goalEl = s.goal ? h('div', { class: 'tut-goal' }, h('span', { class: 'tick', 'aria-hidden': 'true' }), h('span', { text: (touch && s.goalTouch) || s.goal })) : null;
     this.noteEl = h('div', { class: 'tut-note', role: 'status' });
+    this.retryBtn = h('button', { class: 'btn small hidden', text: NOTES.retry, onclick: () => this.retry() });
     this.nextBtn = last ? h('button', { class: 'btn small primary', text: 'Start Survive 15:00', onclick: () => this.finish() })
       : h('button', { class: 'btn small primary', text: 'Next', onclick: () => this.go(1) });
     this.el.innerHTML = '';
@@ -67,9 +72,19 @@ export class Tutorial {
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn small', text: 'Back', disabled: this.i === 0, onclick: () => this.go(-1) }),
         h('button', { class: 'btn small', text: last ? 'Menu' : 'Skip tutorial', onclick: () => this.skip() }),
-        this.nextBtn));
+        this.retryBtn, this.nextBtn));
     this.el.classList.remove('hidden');
     this.el.scrollTop = 0;
+  }
+
+  // Missed the warning: put the valley back to a calm spell and send a fresh cold front with a fresh 20 second forecast.
+  retry() {
+    const s = this.step, { challenge: ch, sim } = this.ui.app;
+    sim.setEnv(TUTORIAL_SCENES.calm.env);                 // public sim method: snow, temperature and foxes back to calm at once
+    ch.setScene(s.scene);
+    this.st.log = ch.log.length; this.st.t0 = performance.now(); st_front(this.st, sim, s);
+    if (s.trust) ch.grantTrust(s.trust);
+    this.ui.setPaused(false); this.update(true);
   }
 
   // ---------- has the student done it? ----------
@@ -85,7 +100,10 @@ export class Tutorial {
       }
       case 'causes': {
         const open = !ui.el.drawer.classList.contains('hidden');
-        return { done: open && ui.graph.tab === 'causes', note: open ? NOTES.graphOpen : '' };
+        const c = ch.caughtSince(), rec = sim.history.records.filter((r) => r.gen >= ch.sceneGen);
+        const sum = (k) => rec.reduce((n, r) => n + (r.traits[k]?.n || 0), 0);
+        const rate = NOTES.catchRate(c.brown, sum('brown'), c.white, sum('white'));
+        return { done: open && ui.graph.tab === 'causes', note: rate + (open ? ' ' + NOTES.graphOpen : '') };
       }
       case 'carrier': {
         if (!ui.genoView) return { done: false, note: NOTES.genoOff };
@@ -99,8 +117,10 @@ export class Tutorial {
         return { done: true, note: news.length ? NOTES.arrived(news.join(' and ')) : '' };
       }
       case 'prepare': {
-        const a = acts();
-        if (a.some((x) => x.action === 'shelter' || (x.action === 'translocate' && x.source === 'alpine'))) return { done: true, note: NOTES.prepared };
+        const a = acts(), good = (x) => x.action === 'shelter' || (x.action === 'translocate' && x.source === 'alpine');
+        if (a.some((x) => good(x) && x.t < st.frontT)) return { done: true, note: NOTES.prepared };
+        st.late = sim.t >= st.frontT;                       // the front has landed and nothing useful was done in time
+        if (st.late) return { done: false, note: a.some(good) ? NOTES.lateAct : NOTES.late };
         return { done: false, note: a.some((x) => x.action === 'translocate') ? NOTES.wrongSource : paused ? NOTES.paused : '' };
       }
       default: return { done: true };
@@ -137,6 +157,7 @@ export class Tutorial {
     }
     if (this.goalEl) this.goalEl.classList.toggle('done', st.done);
     if (this.noteEl.textContent !== st.note) this.noteEl.textContent = st.note;
+    if (this.retryBtn) this.retryBtn.classList.toggle('hidden', !(st.late && !st.done));
     this.nextBtn.disabled = !st.done; this.nextBtn.classList.toggle('ready', st.done && !s.final);
     // ring a few rabbits near the middle of the view so there is something obvious to click
     if (s.spot === 'rabbits' && !st.done && now - st.markAt > 3500 && w?.mark) {

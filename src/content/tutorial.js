@@ -27,7 +27,7 @@ export const TUTORIAL_STEPS = [
   {
     id: 'graph', run: false, done: 'causes', anchor: '#btn-graphs', anchorThen: '#graph-tabs [data-tab="causes"]',
     title: 'Why did they die?',
-    text: 'Brown fur stands out on snow, so more brown rabbits were caught. The Cause of death graph shows this for every generation. One bar is one generation, and each colour is a cause.',
+    text: 'The Cause of death graph shows how many rabbits died of each cause in each generation. One bar is one generation, and each colour is a cause. It does not show fur colour, so the count below compares brown and white rabbits for you.',
     goal: 'Open Graphs, then choose the Cause of death tab.',
   },
   {
@@ -61,6 +61,11 @@ export const TUTORIAL_STEPS = [
 export const TUTORIAL_NOTES = {
   paused: 'The valley is paused. Press Play to carry on.',
   tally: (brown, white) => `Caught so far: ${brown} brown, ${white} white.`,
+  // caught = predator deaths; atRisk = rabbits of that colour alive at the start of each generation, added up
+  catchRate: (b, bn, w, wn) => {
+    const pc = (a, n) => (n ? ` (${Math.round((a / n) * 100)}%)` : '');
+    return `Caught: brown ${b} of ${bn}${pc(b, bn)}, white ${w} of ${wn}${pc(w, wn)}. Each total adds up the rabbits alive at the start of every generation on snow.`;
+  },
   tallyDone: (brown, white) => `Caught: ${brown} brown and ${white} white. ${brown > white ? 'Brown fur is easy to see on snow.' : 'Keep watching: over time, more brown rabbits are caught on snow.'}`,
   graphOpen: 'Now choose the Cause of death tab.',
   genoOff: 'First tick Genotype view in the Controls panel.',
@@ -69,5 +74,8 @@ export const TUTORIAL_NOTES = {
   arrived: (genos) => `The newcomers carry ${genos}. You get whatever alleles they happen to have.`,
   wrongSource: 'Those rabbits are mostly brown, so they will not help on snow. Try Alpine ridge or a brush shelter.',
   prepared: 'Good. The warren now has some help before the snow arrives.',
+  late: 'The cold front has already arrived, so that was too late to prepare for it. Press Try again for a new warning.',
+  lateAct: 'That came after the cold front had arrived, so it was too late to help in time. Press Try again for a new warning.',
+  retry: 'Try again',
   openPanel: 'Open Controls to find it.',
 };
