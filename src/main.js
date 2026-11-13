@@ -24,7 +24,7 @@ const app = {
     app.world.resize?.();
   },
   home() {
-    app.ui.setPaused(true); app.ui.tutorial.stop(); app.world?.clearKeys?.();
+    app.ui.setPaused(true); app.ui.cancelEnd(); app.ui.tutorial.stop(); app.world?.clearKeys?.();
     $('#app').classList.add('hidden'); $('#end').classList.add('hidden'); $('#title').classList.add('show');
   },
 };

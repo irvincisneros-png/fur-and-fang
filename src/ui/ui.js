@@ -1,6 +1,6 @@
 // HUD: clock, forecast, toasts, rabbit pedigree card, graph drawer, place mode, end screen.
 import { $, h } from './dom.js';
-import { GraphPanel, TABS, POP_MODES } from './graphs.js';
+import { GraphPanel, TABS, POP_MODES, setGraphScale } from './graphs.js';
 import { buildExplore } from './explore.js';
 import { buildSurvive, updateForecast, showEnd } from './survive.js';
 import { P } from '../sim/params.js';
@@ -16,6 +16,7 @@ export class UI {
   constructor(app) {
     this.app = app; this.panel = null; this.placing = null; this.cardId = null; this.cardGen = -1; this.endShown = false; this.endTimer = 0;
     this.genoView = false; this.lastGraphDraw = 0; this.lastGen = -1; this.extinctNotified = false;
+    this.mutByGen = new Map(); this.routine = []; this.wasMobile = mobile(); this.endSim = null;
     this.el = {
       app: $('#app'), title: $('#title'), clock: $('#clock'), clockLbl: $('#clock-lbl'), gen: $('#gen'), pop: $('#pop'), trust: $('#trust'), trustBox: $('#trust-box'),
       forecast: $('#forecast'), now: $('#fc-now'), next: $('#fc-next'), side: $('#side-body'), toasts: $('#toasts'), card: $('#rabbit-card'), drawer: $('#drawer'),
@@ -51,16 +52,30 @@ export class UI {
     window.addEventListener('keyup', (e) => this.app.world?.moveKey?.(e.code, false));
     window.addEventListener('blur', () => this.app.world?.clearKeys?.());
     this.initCamHint();
-    window.addEventListener('resize', () => { this.app.world?.resize?.(); if (this.app.sim) this.graph.draw(); this.syncInsets(); });
+    window.addEventListener('resize', () => {
+      const m = mobile();
+      if (m !== this.wasMobile) { this.wasMobile = m; document.body.classList.remove('panel-open', 'no-side'); this.coach.place(); }   // a different layout: Controls start in that layout's normal state
+      this.app.world?.resize?.(); if (this.app.sim) this.graph.draw(); this.syncInsets();
+    });
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.syncInsets()).observe($('#forecast'));
+    this.initBigText();
     // click vs drag on whichever canvas is showing
     for (const c of [$('#gl'), $('#dbg')]) {
-      let down = null;
-      c.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+      // a tap is exactly one pointer going down and up in place: a second finger (pinch) or a cancelled touch is never a placement
+      let down = null; const active = new Set(); let multi = false;
+      const lift = (e) => { active.delete(e.pointerId); if (!active.size) multi = false; };
+      c.addEventListener('pointerdown', (e) => {
+        active.add(e.pointerId);
+        if (active.size > 1) { multi = true; down = null; return; }
+        down = multi ? null : { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+      });
+      c.addEventListener('pointercancel', (e) => { down = null; lift(e); });
       c.addEventListener('pointermove', (e) => { if (this.placing) this.movePreview(e.clientX, e.clientY); });
       c.addEventListener('pointerleave', () => { if (this.placing) this.app.world?.setPreview?.(null); });
       c.addEventListener('pointerup', (e) => {
-        if (!down) return; const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dur = performance.now() - down.t; down = null;
-        if (moved < 6 && dur < 600 && this.app.sim) this.onCanvasClick(e.clientX, e.clientY);
+        lift(e);
+        if (!down || down.id !== e.pointerId) { down = null; return; } const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dur = performance.now() - down.t; down = null;
+        if (moved < 6 && dur < 600 && !multi && this.app.sim) this.onCanvasClick(e.clientX, e.clientY);
       });
     }
   }
@@ -76,6 +91,21 @@ export class UI {
     el.classList.remove('hidden');
   }
 
+  // "Big text": for a projector. Larger page text plus larger graph labels, remembered on this device.
+  initBigText() {
+    const KEY = 'ff-bigtext-v1', btn = $('#btn-big');
+    const apply = (on, save) => {
+      document.body.classList.toggle('big-text', on); btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', String(on));
+      setGraphScale(on ? 1.4 : 1);
+      if (save) { try { localStorage.setItem(KEY, on ? '1' : '0'); } catch { /* storage blocked: applies for this visit only */ } }
+      if (this.app.sim) this.graph.draw();
+      requestAnimationFrame(() => { this.syncInsets(); this.tutorial.place(); this.coach.place(); if (this.app.sim) this.graph.draw(); });
+    };
+    let on = false; try { on = localStorage.getItem(KEY) === '1'; } catch { /* storage blocked */ }
+    btn.addEventListener('click', () => apply(!document.body.classList.contains('big-text'), true));
+    if (on) apply(true, false);
+  }
+
   // ---------- modes ----------
   startMode(mode) {
     const tut = mode === 'tutorial', sv = mode === 'survive' || tut;      // the tutorial uses the Survive HUD on a scripted valley
@@ -83,14 +113,14 @@ export class UI {
     $('#forecast').classList.toggle('hidden', !sv); this.el.trustBox.classList.toggle('hidden', !sv);
     this.el.speed.classList.toggle('hidden', sv);
     this.el.clockLbl.textContent = sv && !tut ? 'Time left' : 'Time';
-    this.endShown = false; clearTimeout(this.endTimer); clearTimeout(this.eventTimer); this.extinctNotified = false; this.lastGen = -1; this.pendingPhase = null;
+    this.endShown = false; this.cancelEnd(); clearTimeout(this.eventTimer); this.mutByGen.clear(); this.routine = []; this.extinctNotified = false; this.lastGen = -1; this.pendingPhase = null;
     this.el.event.classList.add('hidden'); this.el.flash.classList.remove('go'); this.el.extinct.classList.add('hidden');
     this.el.speed.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === '1'));
     this.endPlace(); this.closeCard(); this.setPaused(false);
     this.panel = sv ? buildSurvive(this.el.side, { app: this.app, ui: this, tutorial: tut }) : buildExplore(this.el.side, { app: this.app, ui: this });
     this.el.toasts.innerHTML = '';
-    document.body.classList.remove('panel-open', 'no-side');
-    if (!mobile()) { /* desktop: side panel open */ } else this.toggleDrawer(false);
+    document.body.classList.remove('panel-open', 'no-side');            // Controls start in the normal state of this layout and mode
+    if (mobile()) this.toggleDrawer(false);
     this.setGenotypeView(false);
     $('#pop-chips').classList.remove('hidden');
     this.refresh(true);
@@ -115,6 +145,8 @@ export class UI {
     let bottom = 0;
     if (!this.el.drawer.classList.contains('hidden')) bottom = Math.round(window.innerHeight - this.el.drawer.getBoundingClientRect().top);
     else if (!wide && document.body.classList.contains('panel-open')) bottom = Math.round(window.innerHeight * 0.58);
+    const fc = $('#forecast'), fr = fc.getBoundingClientRect();           // banners sit below the forecast strip, never over it
+    document.documentElement.style.setProperty('--below-fc', Math.round(fc.classList.contains('hidden') || !fr.height ? top : fr.bottom) + 'px');
     document.documentElement.style.setProperty('--free-left', left + 'px');
     document.documentElement.style.setProperty('--free-bottom', bottom + 'px');
     document.body.classList.toggle('drawer-open', bottom > 0 && wide);
@@ -140,18 +172,37 @@ export class UI {
   }
   togglePanel() {
     if (mobile()) { document.body.classList.toggle('panel-open'); if (document.body.classList.contains('panel-open')) this.toggleDrawer(false); }
-    else { document.body.classList.toggle('no-side'); $('#side').style.display = document.body.classList.contains('no-side') ? 'none' : ''; }
+    else document.body.classList.toggle('no-side');          // visibility lives in CSS (body.no-side), never in an inline style
     this.syncInsets(); this.coach.place();
   }
+  cancelEnd() { clearTimeout(this.endTimer); this.endSim = null; }           // Menu or a new run: a report that is still waiting to open must not appear
   setPaused(p) { this.app.paused = p; this.el.pause.textContent = p ? 'Play' : 'Pause'; this.el.paused.classList.toggle('hidden', !p); }
   setGenotypeView(v) { this.genoView = v; this.app.world?.setGenotypeView?.(v); const a = $('#gv'), b = $('#gv2'); if (a) a.checked = v; if (b) b.checked = v; }
 
   // ---------- toasts ----------
   toast(text, kind = 'info', ms = 5000) {
+    // phones: routine notes (info, mutations, good news) fold into one summary line so they never pile up over the valley
+    if (mobile() && /^(info|mut|good)/.test(kind)) { this.routineToast(text, ms); return; }
     const t = h('div', { class: 'toast ' + kind, text, role: 'status' });
     this.el.toasts.append(t);
-    while (this.el.toasts.children.length > 4) this.el.toasts.firstChild.remove();
+    const cap = mobile() ? 2 : 4, plain = () => [...this.el.toasts.children].filter((c) => !c.classList.contains('summary'));
+    while (plain().length > cap) plain()[0].remove();
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 400); }, ms);
+  }
+  routineToast(text, ms) {
+    this.routine.push(text); if (this.routine.length > 8) this.routine.shift();
+    let box = this.el.toasts.querySelector('.summary');
+    if (!box) {
+      box = h('div', { class: 'toast info summary', role: 'status', tabindex: 0, title: 'Tap to show or hide the recent notes' });
+      box.addEventListener('click', () => box.classList.toggle('open'));
+      this.el.toasts.prepend(box);
+    }
+    const n = this.routine.length;
+    box.innerHTML = '';
+    box.append(h('span', { class: 'sum-line', text: this.routine[n - 1] }), n > 1 ? h('span', { class: 'sum-more', text: ` +${n - 1} earlier` }) : '',
+      h('ol', { class: 'sum-list' }, this.routine.slice(0, -1).reverse().map((t) => h('li', { text: t }))));
+    clearTimeout(this.routineTimer);
+    this.routineTimer = setTimeout(() => { box.classList.add('out'); setTimeout(() => { box.remove(); this.routine = []; }, 400); }, Math.max(ms, 4500));
   }
 
   onEvents(events) {
@@ -159,7 +210,7 @@ export class UI {
     for (const e of events) {
       if (e.type === 'mutation') {
         if (e.planted) { this.toast(`Teacher mutation: kit #${e.id} carries allele ${e.allele} (${ALLELE_TRAIT[e.allele]})`, 'mut'); continue; }
-        muts++;
+        muts++; this.mutByGen.set(this.app.sim.gen, (this.mutByGen.get(this.app.sim.gen) || 0) + 1);
         // only toast a mutation that creates a mutant allele that is absent or rare (<5 %); back-mutations are not toasted
         if (shown || !['b', 'e', 'T'].includes(e.allele)) continue;
         comp = comp || this.app.sim.composition();
@@ -310,7 +361,10 @@ export class UI {
     this.lastGen = sim.gen;
     if (sim.ended && !this.endShown) {
       this.endShown = true;
-      if (run) this.endTimer = setTimeout(() => { showEnd(this.el.end, { app: this.app }); }, sim.extinct ? 1800 : 600);
+      if (run) {
+        const simAtEnd = sim; this.endSim = sim;
+        this.endTimer = setTimeout(() => { if (this.endSim === simAtEnd && this.app.sim === simAtEnd && !this.el.title.classList.contains('show')) showEnd(this.el.end, { app: this.app }); }, sim.extinct ? 1800 : 600);
+      }
     }
   }
 }

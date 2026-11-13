@@ -148,7 +148,10 @@ input[type=number], input[type=text] { border: 2px solid var(--ink); border-radi
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.82rem; font-weight: 700; }
 .legend i { display: inline-block; width: 12px; height: 12px; border: 1.5px solid var(--ink); margin-right: 4px; vertical-align: -2px; border-radius: 3px; }
 .readout { font-size: 0.88rem; font-weight: 700; min-height: 1.3em; color: var(--ink2); }
-body.no-side .drawer { left: var(--gutter); }
+@media (min-width: 761px) {
+  body.no-side #side { display: none; }          /* Controls closed: a class, so a restart or resize can never strand it */
+  body.no-side .drawer { left: var(--gutter); }
+}
 
 /* End of run */
 .overlay { position: fixed; inset: 0; z-index: 40; overflow-y: auto; padding: 16px; }
@@ -167,28 +170,6 @@ body.no-side .drawer { left: var(--gutter); }
 .q textarea { width: 100%; min-height: 76px; border: 2px solid var(--ink); border-radius: 10px; padding: 8px; background: #fff; resize: vertical; }
 .end-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 .small-legend { margin: 4px 0 0; }
-
-@media (max-width: 760px) {
-  :root { --top: 96px; --side-w: 100vw; }
-  .stat b { font-size: 1.7rem; }
-  #topbar { gap: 6px 10px; padding: 4px 10px; }
-  .spacer { display: none; }
-  #side { left: 0; right: 0; width: 100%; top: auto; bottom: 0; max-height: 58vh; border-radius: 16px 16px 0 0; border-width: 3px 0 0 0; transform: translateY(110%); z-index: 8; }
-  body.panel-open #side { transform: none; }
-  .drawer { left: 0; right: 0; bottom: 0; height: 52vh; border-radius: 16px 16px 0 0; border-width: 3px 0 0 0; z-index: 9; }
-  #seed-badge { bottom: 10px; right: 8px; padding: 0 8px; font-size: 0.72rem; }
-  #forecast { top: calc(var(--top) + 6px); }
-  #forecast > span { font-size: 0.82rem; padding: 3px 8px; }
-  #toasts { top: auto; bottom: max(48px, calc(var(--free-bottom) + 8px)); right: 8px; left: 8px; z-index: 12; width: auto; }
-  .toast { font-size: 0.85rem; padding: 5px 10px; }
-  .card { top: auto; bottom: 44px; left: 8px; right: 8px; width: auto; max-height: 46vh; overflow-y: auto; z-index: 13; }
-  .stat b { font-size: 1.45rem; } .stat { min-width: 2.6em; } .stat .lbl { font-size: 0.6rem; }
-  #topbar .btn.small { padding: 3px 10px; font-size: 0.85rem; }
-  #dock { left: 8px; bottom: 8px; } .dock-hint { display: none; }
-  #event-banner { top: calc(var(--top) + 46px); width: calc(100vw - 16px); padding: 8px 12px; } #event-banner b { font-size: 1.5rem; } #event-banner p { font-size: 0.9rem; } #event-banner .ev-icon { font-size: 1.9rem; }
-  #coach.docked { left: 8px; right: 8px; width: auto; top: calc(var(--top) + 46px); }
-  #place-banner { width: calc(100vw - 16px); font-size: 0.9rem; }
-}
 
 @media print {
   body > *:not(#end) { display: none !important; }
@@ -275,7 +256,7 @@ body.tutorial #paused-badge, body.tutorial #cam-hint, body.tutorial #seed-badge 
 .offer-inner h2 { font-family: var(--font-title); font-weight: 400; font-size: 2rem; margin: 0 0 4px; } .offer-inner p { font-weight: 700; margin: 0 0 14px; }
 .offer-inner .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
 @media (max-width: 760px) {
-  #tutor.docked { left: 8px; right: 8px; width: auto; top: calc(var(--top) + 46px); max-height: 44vh; overflow-y: auto; padding: 8px 12px 10px; }
+  #tutor.docked { left: 8px; right: 8px; width: auto; top: calc(var(--below-fc, var(--top) + 46px) + 6px); max-height: 44vh; overflow-y: auto; padding: 8px 12px 10px; }
   #tutor > b { font-size: 1.25rem; } #tutor p { font-size: 0.86rem; margin: 3px 0 6px; } .tut-goal { font-size: 0.86rem; } .tut-note { font-size: 0.8rem; }
 }
 #tutor.compact p { display: none; }
@@ -283,3 +264,49 @@ body.tutorial #paused-badge, body.tutorial #cam-hint, body.tutorial #seed-badge 
   body.tutorial #forecast { left: 8px; right: 8px; transform: none; max-width: none !important; flex-wrap: nowrap; }
   body.tutorial #fc-now { display: none; }
 }
+
+/* ---- phones: this block stays LAST so it wins over every base rule above ---- */
+@media (max-width: 760px) {
+  :root { --top: 96px; --side-w: 100vw; }
+  .stat b { font-size: 1.7rem; }
+  #topbar { gap: 6px 10px; padding: 4px 10px; }
+  .spacer { display: none; }
+  #side { left: 0; right: 0; width: 100%; top: auto; bottom: 0; max-height: 58vh; border-radius: 16px 16px 0 0; border-width: 3px 0 0 0; transform: translateY(110%); z-index: 8; }
+  body.panel-open #side { transform: none; }
+  .drawer { left: 0; right: 0; bottom: 0; height: 52vh; border-radius: 16px 16px 0 0; border-width: 3px 0 0 0; z-index: 9; }
+  #seed-badge { bottom: 10px; right: 8px; padding: 0 8px; font-size: 0.72rem; }
+  #forecast { top: calc(var(--top) + 6px); }
+  #forecast > span { font-size: 0.82rem; padding: 3px 8px; }
+  #toasts { top: auto; bottom: max(48px, calc(var(--free-bottom) + 8px)); right: 8px; left: 8px; z-index: 12; width: auto; }
+  .toast { font-size: 0.85rem; padding: 5px 10px; }
+  .card { top: auto; bottom: 44px; left: 8px; right: 8px; width: auto; max-height: 46vh; overflow-y: auto; z-index: 13; }
+  .stat b { font-size: 1.45rem; } .stat { min-width: 2.6em; } .stat .lbl { font-size: 0.6rem; }
+  #topbar .btn.small { padding: 3px 10px; font-size: 0.85rem; }
+  #dock { left: 8px; bottom: 8px; } .dock-hint { display: none; }
+  #event-banner { top: calc(var(--below-fc, var(--top) + 46px) + 6px); width: calc(100vw - 16px); padding: 8px 12px; } #event-banner b { font-size: 1.5rem; } #event-banner p { font-size: 0.9rem; } #event-banner .ev-icon { font-size: 1.9rem; }
+  #coach.docked { left: 8px; right: 8px; width: auto; top: calc(var(--below-fc, var(--top) + 46px) + 6px); }
+  #place-banner { top: calc(var(--below-fc, var(--top) + 46px) + 6px); width: calc(100vw - 16px); font-size: 0.9rem; }
+}
+
+
+/* ---- phone toast summary ---- */
+.toast.summary { cursor: pointer; pointer-events: auto; }
+.toast .sum-more { font-weight: 800; color: var(--ink2); }
+.sum-list { display: none; margin: 6px 0 0; padding-left: 1.3em; font-weight: 600; font-size: 0.85em; }
+.toast.summary.open .sum-list, .sum-list.open { display: block; }
+.mutlog { background: var(--paper2); border: 2px solid var(--ink); border-radius: 12px; padding: 4px 10px; margin: 6px 0; font-size: 0.85rem; }
+.mutlog .sum-list { padding-left: 0; list-style: none; font-size: 0.82rem; }
+.geno-legend { font-size: 0.82rem; font-weight: 700; margin: 4px 0; display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; }
+.gl-item { white-space: nowrap; } .gl-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); margin-right: 4px; vertical-align: -2px; }
+.save-note.warn { color: var(--red); font-weight: 800; }
+#btn-big.on { background: var(--ink); color: var(--paper2); }
+
+/* ---- Big text (projector) ---- */
+html:has(body.big-text) { font-size: 18px; }
+body.big-text { --side-w: 380px; }
+body.big-text .drawer { height: min(420px, 58vh); }
+body.big-text .abar { font-size: 0.9rem; }
+body.big-text #tutor, body.big-text #coach { width: min(440px, calc(100vw - 16px)); }
+body.big-text .toast { font-size: 1.05rem; }
+.abar { font-size: 0.85rem; }
+@media (max-width: 760px) { html:has(body.big-text) { font-size: 17px; } body.big-text { --side-w: 100vw; } }

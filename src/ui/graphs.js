@@ -8,7 +8,11 @@ export const COLORS = {
   predator: '#c0452f', cold: '#5b8fc4', heat: '#e3a02f', starved: '#8c9a3a', old: '#a393b8', bottleneck: '#6a6a6a',
 };
 export const CAUSE_LABEL = { predator: 'Predators', cold: 'Cold', heat: 'Heat', starved: 'Starved', old: 'Old age', bottleneck: 'Bottleneck' };
-const FONT = '12px Mulish, system-ui, sans-serif';
+// Text sizes are in CSS px and scale together ("Big text" for a projector sets 1.4).
+let SCALE = 1;
+export function setGraphScale(k) { SCALE = k; }
+const font = (px, weight = 600) => `${weight} ${Math.round(px * SCALE * 10) / 10}px Mulish, system-ui, sans-serif`;
+const BASE = 13.5, SMALL = 12.5;
 
 function prep(canvas) {
   const dpr = window.devicePixelRatio || 1, r = canvas.getBoundingClientRect();
@@ -25,10 +29,10 @@ function niceMax(v) {
 }
 
 function frame(ctx, w, h, { xMax, yMax, yFmt = (v) => v, xLabel = 'Generation', yLabel = '', bands = null, xPos = null }) {
-  const m = { l: 60, r: 12, t: 12, b: 34 };
+  const m = { l: Math.round(60 * (0.6 + 0.4 * SCALE)), r: 12, t: 12 + (bands ? Math.round(10 * SCALE) : 0), b: Math.round(36 * SCALE) };
   const pw = w - m.l - m.r, ph = h - m.t - m.b;
   const X = xPos || ((x) => m.l + (xMax ? x / xMax : 0) * pw), Y = (y) => m.t + ph - (y / yMax) * ph;
-  ctx.font = FONT; ctx.textBaseline = 'middle';
+  ctx.font = font(BASE); ctx.textBaseline = 'middle';
   if (bands) for (const b of bands) {
     const x0 = X(b.start / 10), x1 = X(Math.min(b.end / 10, xMax));
     if (x1 <= m.l || x0 >= m.l + pw) continue;
@@ -41,19 +45,21 @@ function frame(ctx, w, h, { xMax, yMax, yFmt = (v) => v, xLabel = 'Generation', 
     ctx.fillText(yFmt(v), m.l - 6, y);
   }
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  const xticks = Math.min(8, Math.max(1, Math.floor(pw / 60)));
+  const xticks = Math.min(8, Math.max(1, Math.floor(pw / (60 * SCALE))));
   for (let i = 0; i <= xticks; i++) {
     const v = (xMax * i) / xticks, x = X(v);
     ctx.fillText(String(Math.round(v)), x, m.t + ph + 4);
   }
-  ctx.fillStyle = COLORS.ink; ctx.fillText(xLabel, m.l + pw / 2, h - 15);
-  if (yLabel) { ctx.save(); ctx.translate(12, m.t + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(yLabel, 0, 0); ctx.restore(); }
+  ctx.fillStyle = COLORS.ink; ctx.fillText(xLabel, m.l + pw / 2, h - Math.round(16 * SCALE));
+  if (yLabel) { ctx.save(); ctx.translate(Math.round(12 * SCALE), m.t + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(yLabel, 0, 0); ctx.restore(); }
   ctx.strokeStyle = COLORS.ink; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(m.l, m.t); ctx.lineTo(m.l, m.t + ph); ctx.lineTo(m.l + pw, m.t + ph); ctx.stroke();
-  if (bands) {                                              // band labels along the top
-    ctx.font = '10.5px Mulish, system-ui, sans-serif'; ctx.fillStyle = COLORS.ink; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  if (bands) {                                              // event labels along the top: whole label if it fits, else just the icon, never squashed text
+    ctx.font = font(SMALL, 800); ctx.fillStyle = COLORS.ink; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     for (const b of bands) {
-      const x0 = Math.max(m.l, X(b.start / 10)), x1 = Math.min(m.l + pw, X(Math.min(b.end / 10, xMax)));
-      if (x1 - x0 > 46) ctx.fillText(b.icon + ' ' + b.label, x0 + 3, m.t + 2, x1 - x0 - 4);
+      const x0 = Math.max(m.l, X(b.start / 10)), x1 = Math.min(m.l + pw, X(Math.min(b.end / 10, xMax))), room = x1 - x0 - 6;
+      const full = b.icon + ' ' + b.label;
+      if (room >= ctx.measureText(full).width) ctx.fillText(full, x0 + 3, 2);
+      else if (b.icon && room >= ctx.measureText(b.icon).width) ctx.fillText(b.icon, x0 + 3, 2);
     }
   }
   return { m, pw, ph, X, Y };
@@ -103,17 +109,17 @@ function hoverMark(ctx, f, history, gen, dots) {
 // Stacked horizontal bars: deaths by cause per window (end screen).
 export function drawDeathBars(canvas, rows) {
   const { ctx, w, h } = prep(canvas);
-  ctx.font = FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-  const labelW = Math.min(150, w * 0.32), padR = 40;
+  ctx.font = font(BASE); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const labelW = Math.min(150 * SCALE, w * 0.36), padR = 44 * SCALE, line = Math.round(17 * SCALE);
   let lx = labelW, ly = 10;
   const items = CAUSES.filter((c) => rows.some((r) => r.deaths[c]));
   for (const c of (items.length ? items : CAUSES)) {
-    const tw = ctx.measureText(CAUSE_LABEL[c]).width + 26;
-    if (lx + tw > w && lx > labelW) { lx = labelW; ly += 16; }
-    ctx.fillStyle = COLORS[c]; ctx.fillRect(lx, ly - 5, 11, 11); ctx.fillStyle = COLORS.ink; ctx.fillText(CAUSE_LABEL[c], lx + 16, ly + 1); lx += tw;
+    const tw = ctx.measureText(CAUSE_LABEL[c]).width + 26 * SCALE;
+    if (lx + tw > w && lx > labelW) { lx = labelW; ly += line; }
+    ctx.fillStyle = COLORS[c]; const sq = Math.round(11 * SCALE); ctx.fillRect(lx, ly - sq / 2, sq, sq); ctx.fillStyle = COLORS.ink; ctx.fillText(CAUSE_LABEL[c], lx + sq + 5, ly + 1); lx += tw;
   }
-  ctx.fillStyle = COLORS.ink; ctx.fillText('Bars show each cause as a share of that event\u2019s deaths; the number is the total', 4, ly + 20);
-  const top = ly + 34, rowH = Math.max(18, Math.min(30, (h - top - 6) / Math.max(1, rows.length)));
+  ctx.fillStyle = COLORS.ink; ctx.fillText('Each bar splits that event\u2019s deaths by cause; n is the total', 4, ly + line + 4);
+  const top = ly + line + 22, rowH = Math.max(18 * SCALE, Math.min(34 * SCALE, (h - top - 6) / Math.max(1, rows.length)));
   rows.forEach((r, i) => {
     const y = top + i * rowH; let x = labelW; const tot = CAUSES.reduce((s, c) => s + (r.deaths[c] || 0), 0);
     ctx.fillStyle = COLORS.ink; ctx.textAlign = 'right'; ctx.fillText(r.label, labelW - 8, y + rowH / 2, labelW - 10);
@@ -212,10 +218,10 @@ export class GraphPanel {
     if (!rec) return;
     const now = sim.composition();
     const cats = [['Brown fur', 'brown'], ['White fur', 'white'], ['Short ears', 'shortEars'], ['Long ears', 'longEars'], ['Short teeth', 'shortTeeth'], ['Long teeth', 'longTeeth']];
-    const m = { l: 56, r: 12, t: 14, b: 40 }, pw = w - m.l - m.r, ph = h - m.t - m.b, Y = (v) => m.t + ph - v * ph;
-    ctx.font = FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'right'; ctx.strokeStyle = COLORS.grid;
+    const m = { l: Math.round(56 * (0.6 + 0.4 * SCALE)), r: 12, t: 14 + Math.round(8 * SCALE), b: Math.round(40 * SCALE) }, pw = w - m.l - m.r, ph = h - m.t - m.b, Y = (v) => m.t + ph - v * ph;
+    ctx.font = font(BASE); ctx.textBaseline = 'middle'; ctx.textAlign = 'right'; ctx.strokeStyle = COLORS.grid;
     for (let i = 0; i <= 4; i++) { const y = Y(i / 4); ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(m.l + pw, y); ctx.stroke(); ctx.fillStyle = COLORS.ink; ctx.fillText(pct(i / 4), m.l - 6, y); }
-    const gw = pw / cats.length, bw = Math.min(26, gw * 0.3);
+    const gw = pw / cats.length, bw = Math.min(26 * SCALE, gw * 0.3);
     cats.forEach(([label, key], i) => {
       const cx = m.l + gw * (i + 0.5);
       const a = rec.comp.n ? rec.comp[key] / rec.comp.n : 0, b = now.n ? now[key] / now.n : 0;
