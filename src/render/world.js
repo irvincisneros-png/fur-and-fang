@@ -148,6 +148,7 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
   applyQuality();
 
   const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _tmp = new THREE.Vector3();
+  let lastSim = null;
   const world = {
     canvas, renderer, scene, camera, controls, stats,
     get quality() { return qName; },
@@ -160,6 +161,10 @@ export async function createWorld(canvas, { quality = 'auto' } = {}) {
 
     update(sim, dt, realDt) {
       if (disposed) return;
+      if (sim !== lastSim) {              // a new run (Restart, Tutorial -> Survive, Set up): ids restart, so drop every per-run cache
+        lastSim = sim; herd.reset(); foxes.reset(); props.reset(); pings.reset(); puffs.reset(); preview.show(false);
+        followId = null; firstEnv = true;
+      }
       dt = clamp(dt || 0.016, 0.0005, 0.1); time += dt; U.uTime.value = time;
       const rdt = clamp(realDt || dt, 0.0005, 0.25);
       const env = sim.env || {};

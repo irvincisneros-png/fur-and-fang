@@ -80,6 +80,7 @@ void main(){ float s = vK > 0.5 ? star(gl_PointCoord) : soft(gl_PointCoord); flo
     },
     frost(x, y, z) { for (let i = 0; i < 12; i++) { const a = R() * 6.283, v = 0.3 + R() * 0.6; spawn(x, y + 0.2, z, Math.cos(a) * v, 0.5 + R(), Math.sin(a) * v, 0.2, 0.2, 1.2, 0xcfeaff, 0.9, 1, 1.6, -0.3); } },
     wisp(x, y, z, hex = 0xdadada) { for (let i = 0; i < 5; i++) { const a = R() * 6.283; spawn(x, y + 0.2, z, Math.cos(a) * 0.3, 0.5 + R() * 0.4, Math.sin(a) * 0.3, 0.5, 1.3, 1.4, hex, 0.5, 0, 1.5, -0.2); } },
+    reset() { for (let i = 0; i < max; i++) { age[i] = life[i]; alpha[i] = 0; } },
     update(dt) {
       for (let i = 0; i < max; i++) {
         if (age[i] >= life[i]) { alpha[i] = 0; continue; }
@@ -138,6 +139,7 @@ export function createPings(n = 6) {
         r.t = -w * 0.45; r.x = x; r.z = z; r.hex = hex; r.rad = radius; r.dur = 1.5;
       }
     },
+    reset() { for (const r of pool) { r.t = 1e9; r.show(false); } },
     update(dt) {
       for (const r of pool) {
         if (r.t >= (r.dur || 0)) { r.show(false); continue; }

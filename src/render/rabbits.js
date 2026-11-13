@@ -73,14 +73,33 @@ export class Herd {
   /** ring these rabbits for a few seconds (newcomers from a translocation) */
   mark(ids, hex = 0xffd447, seconds = 9) { const c = new THREE.Color(hex); for (const id of ids) this.marks.set(id, { t: seconds, c }); }
 
+  /** forget every rabbit: called when a new run starts (ids restart at 1, so nothing cached may carry over) */
+  reset() {
+    this.v.clear(); this.done.clear(); this.causes.clear(); this.marks.clear(); this.first = true; this.followId = null; this.marker.visible = false;
+    for (const k in this.p) { this.p[k].n = 0; this.p[k].mesh.count = 0; this.p[k].out.count = 0; }
+    this.rings.count = 0; this.blobs.count = 0;
+  }
+
+  _fur(h, white) {
+    const c = (white ? WHITE : BROWN).clone();
+    if (white) c.multiplyScalar(0.96 + 0.04 * h); else { c.multiplyScalar(0.84 + 0.3 * h); c.r *= 1.0 + 0.1 * (h - 0.5); c.b *= 1.0 - 0.18 * (h - 0.5); }
+    return c;
+  }
+
+  /** keep the drawn traits in step with the sim (dominance can be switched mid-run in Explore) */
+  _sync(v, r) {
+    const ph = r.pheno || {}, white = !!ph.white;
+    if (white !== v.white) { v.white = white; v.fur = this._fur(v.h, white); }
+    v.longEars = !!ph.longEars; v.longTeeth = !!ph.longTeeth;
+    v.geno = furGenotype(r.genotype && r.genotype.fur);
+  }
+
   _make(r, born) {
     const h = hashId(r.id);
     const white = !!(r.pheno && r.pheno.white);
-    const c = (white ? WHITE : BROWN).clone();
-    if (white) c.multiplyScalar(0.96 + 0.04 * h); else { c.multiplyScalar(0.84 + 0.3 * h); c.r *= 1.0 + 0.1 * (h - 0.5); c.b *= 1.0 - 0.18 * (h - 0.5); }
     const v = {
       id: r.id, h, x: r.x, z: r.z, px: r.x, pz: r.z, vx: 0, vz: 0, sp: 0, yaw: (h * 6.283), phase: 0, nib: 0, alert: 0,
-      size: ((r.age || 0) < 1 ? 0.62 : 1) * RABBIT_SCALE, pop: born ? 0 : 1, popT: 0, dying: null, fur: c, seen: 0, moving: false, fleeAmt: 0,
+      size: ((r.age || 0) < 1 ? 0.62 : 1) * RABBIT_SCALE, pop: born ? 0 : 1, popT: 0, dying: null, fur: this._fur(h, white), seen: 0, moving: false, fleeAmt: 0,
       white, longEars: !!(r.pheno && r.pheno.longEars), longTeeth: !!(r.pheno && r.pheno.longTeeth), geno: furGenotype(r.genotype && r.genotype.fur),
       y: 0, last: r, eL: 0.18, eR: 0.18, eLv: 0, eRv: 0, vy: 0, py: 0,
     };
@@ -117,11 +136,12 @@ export class Herd {
     for (let i = 0; i < list.length; i++) {
       const r = list[i];
       let v = this.v.get(r.id);
-      if (!v && this.done.has(r.id)) { this.done.set(r.id, f); continue; }          // finished its death animation; the sim may still list it
+      if (!v && this.done.has(r.id)) { if (r.alive === false || r.state === 'dying') { this.done.set(r.id, f); continue; } this.done.delete(r.id); }          // finished its death animation; the sim may still list it
       if (!v) { v = this._make(r, !first); this.v.set(r.id, v); }
       v.seen = f; v.last = r;
       if (!v.dying && (r.alive === false || r.state === 'dying')) this.startDying(v, r.dyingCause || this.causes.get(r.id));
       if (!v.dying) {
+        this._sync(v, r);
         // follow the sim position smoothly (the sim ticks in steps)
         const dx = r.x - v.x, dz = r.z - v.z;
         if (dx * dx + dz * dz > 100) { v.x = r.x; v.z = r.z; v.px = v.x; v.pz = v.z; } else { const k = 1 - Math.exp(-dt * 11); v.x += dx * k; v.z += dz * k; }

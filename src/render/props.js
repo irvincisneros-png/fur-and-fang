@@ -112,6 +112,7 @@ export function createProps(models, quality) {
       this._outlines = q.outlines;
     },
     setShadows(on) { for (const s of statics) s.mesh.castShadow = on; shelM.castShadow = on; },
+    reset() { for (const r of patches.values()) { group.remove(r.ring.group); r.ring.dispose(); } patches.clear(); cloverM.count = 0; shelM.count = 0; shelO.count = 0; },
     update(sim, dt) {
       const seen = new Set();
       for (const p of sim.patches || []) {

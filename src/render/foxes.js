@@ -37,6 +37,8 @@ export class Foxes {
     return rig;
   }
 
+  reset() { for (const f of this.f.values()) { f.used = false; f.root.visible = false; } this.f.clear(); }
+
   update(sim, dt, t) {
     const list = sim.predators || [], seen = new Set();
     for (const p of list) {
