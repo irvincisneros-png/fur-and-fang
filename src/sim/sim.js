@@ -10,6 +10,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const WET_PAD = 1.5;                  // hop targets keep this much further back from the water than the hard limit
 const CELL = 6;
 const dist2 = (ax, az, bx, bz) => (ax - bx) * (ax - bx) + (az - bz) * (az - bz);
+const HAZARDS = ['predator', 'cold', 'heat', 'starved'];
 
 export class Simulation {
   constructor(opts = {}) {
@@ -29,8 +30,9 @@ export class Simulation {
     this.rabbits = []; this.predators = []; this.patches = []; this.events = [];
     this.registry = new Map();
     this.hooks = {}; this.history = new History();
-    this.fenceUntil = -1; this.pendingMutations = new Set();
+    this.fenceUntil = -1; this.pendingMutations = new Set(); this.pendingArrivals = [];
     this.dooms = []; this.doomIdx = 0; this.chaseIdx = 0;
+    this.mutTally = { births: 0, total: 0, by: { B: 0, b: 0, E: 0, e: 0, T: 0, t: 0 } };   // random mutations only (not teacher-planted ones)
     this.liveN = 0; this.ended = false; this.extinct = false; this.extinctAt = null; this.lastBirths = 0;
 
     this.burrows = BURROWS.map((b) => ({ ...b }));   // fixed warrens on both banks (the renderer draws mounds at the same spots)
@@ -63,9 +65,21 @@ export class Simulation {
   }
   plantMutation(gene) { this.pendingMutations.add(gene); }
 
+  // Clover is local: a patch feeds only the rabbits inside its ring (up to CLOVER_FOOD rations, shared between them).
+  cloverCrowd() {
+    const out = [];
+    for (const p of this.patches) {
+      if (p.type !== 'clover') continue;
+      let n = 0; const r2 = p.radius * p.radius;
+      for (const r of this.rabbits) if (r.alive && dist2(r.x, r.z, p.x, p.z) < r2) n++;
+      out.push({ p, n });
+    }
+    return out;
+  }
+  // Valley food plus the clover that rabbits are actually in reach of.
   foodSupply() {
     let f = this.env.food;
-    for (const p of this.patches) if (p.type === 'clover') f += P.CLOVER_FOOD;
+    for (const c of this.cloverCrowd()) f += Math.min(P.CLOVER_FOOD, c.n);
     return f;
   }
 
@@ -79,7 +93,7 @@ export class Simulation {
   }
 
   // ---------- creation ----------
-  spawn(genotype, { age = 0, x, z, parents = [0, 0], silent = false, arrived = false, home = null } = {}) {
+  spawn(genotype, { age = 0, x, z, parents = [0, 0], silent = false, arrived = false, home = null, entrant = false } = {}) {
     const rnd = this.mrng.int(this.burrows.length);
     let px = clamp(x ?? this.burrows[home ?? rnd].x, -P.ROAM, P.ROAM); const pz = clamp(z ?? this.burrows[home ?? rnd].z, -P.ROAM, P.ROAM);
     const sx = streamX(pz), off = px - sx; if (Math.abs(off) < WATER_LIM) px = sx + (off < 0 ? -WATER_LIM : WATER_LIM);   // never born in the water
@@ -90,6 +104,7 @@ export class Simulation {
       route: null, wet: false, hurry: false,
     };
     this.rabbits.push(r); this.registry.set(r.id, r); this.liveN++;
+    if (entrant) this.history.entrant(r);   // joined part-way through a generation: counted in that generation's population at risk
     if (!silent) this.events.push({ type: 'birth', id: r.id, x: r.x, z: r.z, parents, kit: age === 0, arrived });
     return r;
   }
@@ -101,8 +116,11 @@ export class Simulation {
   }
 
   // Gene flow: adults walk in from the valley rim (so the player sees them come) and settle at the nearest warren on that bank.
+  // The hard population cap applies: only as many as there is room for come in.
   addAdults(genotypes, source = '') {
     const out = [];
+    genotypes = genotypes.slice(0, Math.max(0, P.CAP - this.liveN));
+    if (!genotypes.length) return out;
     const from = ARRIVE_FROM[source], a = (from ? from.angle : this.mrng.range(0, Math.PI * 2)) + this.mrng.range(-0.18, 0.18);
     const ex = Math.cos(a) * (P.ROAM - 1), ez = Math.sin(a) * (P.ROAM - 1);
     const home = this.nearestBurrow(ex * 0.6, ez * 0.6, sideOf(ex, ez)), b = this.burrows[home];
@@ -114,6 +132,18 @@ export class Simulation {
     this.events.push({ type: 'arrive', ids: out.map((r) => r.id), source, x: ex, z: ez, toX: b.x, toZ: b.z, edge: from ? from.edge : '' });
     return out;
   }
+
+  // Gene flow the fair way: newcomers ordered during a generation walk in at the start of the next one, like every other
+  // ranger tool. They are then part of that generation's starting population, face all of its hazards, and breed at its end
+  // like any resident, so there is no hazard-free head start. Room under the population cap is held for them.
+  // Returns how many were accepted.
+  queueAdults(genotypes, source = '') {
+    const room = Math.max(0, P.CAP - this.liveN - this.pendingCount);
+    const take = genotypes.slice(0, room);
+    if (take.length) this.pendingArrivals.push({ genotypes: take, source });
+    return take.length;
+  }
+  get pendingCount() { let n = 0; for (const a of this.pendingArrivals) n += a.genotypes.length; return n; }
 
   // Set a hop target. If it is across the stream, route over the nearest stepping-stone ford.
   setGoal(r, tx, tz) {
@@ -149,36 +179,49 @@ export class Simulation {
     this.events.push({ type: 'gen', gen: this.gen, t: this.t });
   }
 
-  scheduleHazards() {
-    this.dooms = []; this.doomIdx = 0; this.chaseIdx = 0;
-    const live = this.rabbits.filter((r) => r.alive);
-    const n = live.length; if (!n) return;
+  // Everything the per-rabbit death chances depend on, worked out once for the current valley.
+  hazardContext() {
+    const live = this.rabbits.filter((r) => r.alive), n = live.length;
     const E = this.env, snow = clamp(E.snow, 0, 1), tough = clamp(E.tough, 0, 1);
     const nPred = this.predators.length;
-    const pp = nPred > 0 ? P.PRED_MAX * (1 - Math.exp(-P.PRED_KILLS * nPred / n)) : 0;
-    const camoW = lerp(P.CAMO.whiteGrass, P.CAMO.whiteSnow, snow), camoB = lerp(P.CAMO.brownGrass, P.CAMO.brownSnow, snow);
-    const shelters = this.patches.filter((p) => p.type === 'shelter');
-
     let sumA = 0;
     for (const r of live) sumA += r.pheno.longTeeth ? 1 : 1 - P.TOUGH_PENALTY * tough;
-    const c = this.foodSupply() / Math.max(sumA, 1e-6); // food per unit of chewable demand
+    return {
+      live, n, nPred, tough, temp: E.temp,
+      pp: nPred > 0 && n > 0 ? P.PRED_MAX * (1 - Math.exp(-P.PRED_KILLS * nPred / n)) : 0,
+      camoW: lerp(P.CAMO.whiteGrass, P.CAMO.whiteSnow, snow), camoB: lerp(P.CAMO.brownGrass, P.CAMO.brownSnow, snow),
+      shelters: this.patches.filter((p) => p.type === 'shelter'),
+      clovers: this.cloverCrowd().filter((c) => c.n > 0),
+      c: E.food / Math.max(sumA, 1e-6),          // valley food per unit of chewable demand
+    };
+  }
 
-    const preds = [];
-    for (const r of live) {
-      const ph = r.pheno;
-      let pPred = pp * (ph.white ? camoW : camoB) * (ph.longEars ? P.EARS_PRED : 1);
-      if (pPred > 0) for (const s of shelters) if (dist2(r.x, r.z, s.x, s.z) < s.radius * s.radius) { pPred *= 1 - P.SHELTER_REDUCTION; break; }
-      let pCold = 0, pHeat = 0;
-      if (E.temp < 0) pCold = (ph.longEars ? P.COLD_LONG : P.COLD_SHORT) * -E.temp;
-      else if (E.temp > 0) pHeat = (ph.longEars ? P.HEAT_LONG : P.HEAT_SHORT) * E.temp;
-      const a = ph.longTeeth ? 1 : 1 - P.TOUGH_PENALTY * tough;
-      const D = ph.longTeeth ? 1 + P.TEETH_COST : 1;
-      const sat = a * Math.min(1, c / D);
-      const pStarve = clamp(P.STARVE_K * (1 - sat), 0, 0.95);
+  // Per-generation death chances for one rabbit: [predator, cold, heat, starved].
+  hazardsFor(r, X) {
+    const ph = r.pheno;
+    let pPred = X.pp * (ph.white ? X.camoW : X.camoB) * (ph.longEars ? P.EARS_PRED : 1);
+    if (pPred > 0) for (const s of X.shelters) if (dist2(r.x, r.z, s.x, s.z) < s.radius * s.radius) { pPred *= 1 - P.SHELTER_REDUCTION; break; }
+    let pCold = 0, pHeat = 0;
+    if (X.temp < 0) pCold = (ph.longEars ? P.COLD_LONG : P.COLD_SHORT) * -X.temp;
+    else if (X.temp > 0) pHeat = (ph.longEars ? P.HEAT_LONG : P.HEAT_SHORT) * X.temp;
+    const a = ph.longTeeth ? 1 : 1 - P.TOUGH_PENALTY * X.tough;
+    const D = ph.longTeeth ? 1 + P.TEETH_COST : 1;
+    let intake = a * Math.min(1, X.c / D);
+    // clover is soft, so any teeth can eat it; a patch's rations are shared by the rabbits inside its ring
+    for (const cl of X.clovers) if (dist2(r.x, r.z, cl.p.x, cl.p.z) < cl.p.radius * cl.p.radius) intake += Math.min(1, P.CLOVER_FOOD / cl.n) / D;
+    const pStarve = clamp(P.STARVE_K * (1 - Math.min(1, intake)), 0, 0.95);
+    return [pPred, pCold, pHeat, pStarve];
+  }
 
+  scheduleHazards() {
+    this.dooms = []; this.doomIdx = 0; this.chaseIdx = 0;
+    const X = this.hazardContext(), nPred = X.nPred;
+    if (!X.n) return;
+    const preds = [], cause = HAZARDS;
+    for (const r of X.live) {
+      const p = this.hazardsFor(r, X);
       const u = [this.rng.next(), this.rng.next(), this.rng.next(), this.rng.next()];
       const tt = [this.rng.next(), this.rng.next(), this.rng.next(), this.rng.next()];
-      const p = [pPred, pCold, pHeat, pStarve], cause = ['predator', 'cold', 'heat', 'starved'];
       let best = null;
       for (let k = 0; k < 4; k++) {
         if (u[k] >= p[k]) continue;
@@ -247,8 +290,9 @@ export class Simulation {
     r.alive = false; r.state = 'dying'; r.dyingCause = cause; r.diedGen = this.gen; r.diedT = this.t;
     r.dyingT = cause === 'predator' ? 0.6 : cause === 'bottleneck' ? 0.8 : 2.2;
     this.liveN--; this.removedPending = true;
-    this.history.death(r, cause);
+    this.history.death(r, cause, cause === 'old' ? this.t - 1e-6 : this.t);   // old age ends the generation it belongs to
     this.events.push({ type: 'death', id: r.id, cause, x: r.x, z: r.z, gen: this.gen });
+    if (this.liveN <= 2) this.hooks.onLow?.(this);          // the tutorial valley tops itself up here so it can never die out
     if (this.liveN <= 0 && !this.extinct) {
       this.extinct = true; this.extinctAt = this.t; this.ended = true;
       this.events.push({ type: 'extinct', t: this.t, gen: this.gen });
@@ -263,6 +307,8 @@ export class Simulation {
     this.history.finishGen(this.liveN);
     const births = this.breed();
     this.gen++;
+    const arriving = this.pendingArrivals; this.pendingArrivals = [];
+    for (const a of arriving) this.addAdults(a.genotypes, a.source);
     this.patches = this.patches.filter((p) => p.expiresGen > this.gen);
     this.pruneRegistry();
     this.beginGeneration(births);
@@ -270,6 +316,7 @@ export class Simulation {
 
   breed() {
     const adults = this.rabbits.filter((r) => r.alive && r.age >= 1);
+    const cap = P.CAP - this.pendingCount;          // room is held for newcomers already on their way
     this.rng.shuffle(adults);
     const survive = this.mode === 'survive';
     const perHead = this.foodSupply() / Math.max(1, this.liveN);
@@ -279,7 +326,7 @@ export class Simulation {
       const A = adults[i], B = adults[i + 1];
       const kits = this.cfg.kitsFixed ?? Math.min(P.KITS_MAX, P.KITS_MIN + Math.floor((P.KITS_MAX - P.KITS_MIN) * q + this.rng.next()));
       for (let k = 0; k < kits; k++) {
-        if (this.liveN >= P.CAP) return births;
+        if (this.liveN >= cap) return births;
         const { genotype, mutations } = cross(A.genotype, B.genotype, this.rng, this.cfg.mutationRate);
         const planted = [];
         if (this.pendingMutations.size) {
@@ -291,7 +338,8 @@ export class Simulation {
           this.pendingMutations.clear();
         }
         const kit = this.spawn(genotype, { age: 0, x: A.x + this.mrng.range(-2, 2), z: A.z + this.mrng.range(-2, 2), parents: [A.id, B.id] });
-        births++;
+        births++; this.mutTally.births++;
+        for (const m of mutations) { this.mutTally.total++; this.mutTally.by[m.allele]++; }
         for (const m of mutations) this.events.push({ type: 'mutation', id: kit.id, gene: m.gene, allele: m.allele, from: m.from, planted: false, x: kit.x, z: kit.z });
         for (const m of planted) this.events.push({ type: 'mutation', id: kit.id, gene: m.gene, allele: m.allele, from: m.from, planted: true, x: kit.x, z: kit.z });
       }

@@ -14,6 +14,13 @@ export function track(keys, t) {
   return keys[keys.length - 1][1];
 }
 
+// 30 -> '30 s', 90 -> '1½ min', 120 -> '2 min'
+export function roughTime(sec) {
+  if (sec < 60) return `${sec} s`;
+  const m = Math.floor(sec / 60), half = sec % 60 >= 30;
+  return `${m}${half ? '½' : ''} min`;
+}
+
 export const REFLECTION = [
   'Pick one event from the run. Which allele helped the warren survive it, and why did that allele help in that environment?',
   'Mutations are random: they did not appear because the warren needed them. How did gene flow (translocation) or lucky mutations give the warren variation before each change arrived? What happens when the variation is missing?',
@@ -74,11 +81,20 @@ export class Challenge {
 
   windowAt(t) { return this.windows.find((w) => t >= w.start && t < w.end) || this.windows[this.windows.length - 1]; }
 
-  // What the strip shows: the current phase and, within 20 s, the next announced event.
+  // What the forecast strip shows, and nothing more: the current phase, the next announced change and the one after it.
+  // Timing is exact only inside the last FORECAST_LEAD seconds (a countdown); further out it is rough, to the nearest half minute.
+  // `sec` is the number the strip displays, so a player (or a test) that reads only this object knows what a student knows.
   forecast(t = this.sim.t) {
     const cur = this.windowAt(t);
-    const next = this.windows.find((w) => w.announce && w.start > t && w.start - t <= P.FORECAST_LEAD) || null;
-    return { current: cur, next, inSec: next ? next.start - t : null };
+    const ahead = this.windows.filter((w) => w.announce && w.start > t);
+    const item = (w) => {
+      if (!w) return null;
+      const exact = w.start - t, soon = exact <= P.FORECAST_LEAD;
+      const sec = soon ? Math.ceil(exact) : Math.max(30, Math.round(exact / 30) * 30);
+      return { id: w.id, label: w.label, icon: w.icon, announce: w.announce, soon, sec, text: soon ? `in ${sec} s` : `in about ${roughTime(sec)}` };
+    };
+    const next = item(ahead[0]), later = item(ahead[1]);
+    return { current: cur, next, later, inSec: next && next.soon ? ahead[0].start - t : null };
   }
 
   get outcome() { return this.sim.extinct ? 'extinct' : this.result?.outcome || null; }
@@ -89,7 +105,10 @@ export class Challenge {
     const last = action === 'translocate' ? this.lastTranslocate : this.lastFence;
     return Math.max(0, last + cd - this.sim.gen);
   }
-  get fenceActive() { return this.sim.gen < this.sim.fenceUntil; }
+  // A fence bought this generation starts at the next one (foxes and hazards are set at the start of each generation).
+  get fencePending() { return this.sim.gen === this.lastFence && this.sim.gen < this.sim.fenceUntil; }
+  get fenceActive() { return this.sim.gen > this.lastFence && this.sim.gen < this.sim.fenceUntil; }
+  get fenceGensLeft() { return this.fenceActive ? this.sim.fenceUntil - this.sim.gen : 0; }
 
   canAct(action) {
     if (this.sim.ended) return 'The run is over.';
@@ -103,11 +122,15 @@ export class Challenge {
   translocate(source) {
     const s = P.SOURCES[source]; if (!s) return { ok: false, reason: 'Unknown source.' };
     const why = this.canAct('translocate'); if (why) return { ok: false, reason: why };
-    const gts = []; for (let i = 0; i < P.TRANSLOCATE_COUNT; i++) gts.push(drawGenotype(s.freq, this.rng));
-    const ids = this.sim.addAdults(gts, source);
+    const room = P.CAP - this.sim.liveN - this.sim.pendingCount;     // the valley holds 600 at most: checked before any trust is spent
+    if (room <= 0) return { ok: false, reason: `The valley is full (${P.CAP} rabbits). There is no room for newcomers.` };
+    const n = Math.min(P.TRANSLOCATE_COUNT, room);
+    const gts = []; for (let i = 0; i < n; i++) gts.push(drawGenotype(s.freq, this.rng));
+    this.sim.queueAdults(gts, source);                               // they walk in at the start of the next generation
     this.lastTranslocate = this.sim.gen;
-    this.spend('translocate', { source });
-    return { ok: true, ids, genotypes: gts };
+    this.spend('translocate', { source, count: n, genotypes: gts });
+    this.sim.events.push({ type: 'ordered', source, count: n, partial: n < P.TRANSLOCATE_COUNT });
+    return { ok: true, count: n, genotypes: gts, partial: n < P.TRANSLOCATE_COUNT };
   }
 
   placePatch(type, x, z) {

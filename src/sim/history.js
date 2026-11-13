@@ -39,22 +39,31 @@ export function meanHeterozygosity(comp) {
 const zeroCauses = () => Object.fromEntries(CAUSES.map((c) => [c, 0]));
 
 export class History {
-  constructor() { this.records = []; }
+  constructor() { this.records = []; this.deathLog = []; }   // deathLog: [time, cause] for every death, so events can be totalled by time
   get current() { return this.records[this.records.length - 1]; }
 
   begin(sim, births = 0) {
     const comp = composition(sim.rabbits);
     const rec = {
-      gen: sim.gen, t: sim.t, pop: comp.n, comp, births,
+      gen: sim.gen, t: sim.t, pop: comp.n, comp, births, mutations: sim.mutTally ? sim.mutTally.total - (this.mutSeen || 0) : 0,
       env: { snow: sim.env.snow, temp: sim.env.temp, food: sim.env.food, tough: sim.env.tough, predators: sim.predators.length },
-      deaths: zeroCauses(), survivors: null,
+      deaths: zeroCauses(), survivors: null, arrivals: sim.rabbits.reduce((n, r) => n + (r.alive && r.born === sim.gen && r.age > 0 && sim.gen > 0 ? 1 : 0), 0),
       traits: Object.fromEntries(TRAITS.map((k) => [k, { n: comp[k], d: zeroCauses() }])),
     };
+    this.mutSeen = sim.mutTally ? sim.mutTally.total : 0;
     this.records.push(rec);
     return rec;
   }
 
-  death(r, cause) {
+  // A rabbit that joined during the generation (translocation, tutorial top-up): part of that generation's population at risk.
+  entrant(r) {
+    const rec = this.current; if (!rec) return;
+    rec.arrivals++;
+    for (const k of traitsOf(r.pheno)) rec.traits[k].n++;
+  }
+
+  death(r, cause, t = 0) {
+    this.deathLog.push([t, cause]);
     const rec = this.current; if (!rec) return;
     rec.deaths[cause] = (rec.deaths[cause] || 0) + 1;
     for (const k of traitsOf(r.pheno)) rec.traits[k].d[cause] = (rec.traits[k].d[cause] || 0) + 1;
@@ -68,14 +77,21 @@ export class History {
     return out;
   }
 
+  // Deaths by cause with t0 <= time < t1 (non-overlapping when the intervals are).
+  deathsBetween(t0 = -Infinity, t1 = Infinity) {
+    const out = zeroCauses();
+    for (const [t, c] of this.deathLog) if (t >= t0 && t < t1) out[c]++;
+    return out;
+  }
+
   toCSV(seedCode = '') {
     const head = ['seed', 'generation', 'time_s', 'population', 'white_fur', 'brown_fur', 'long_ears', 'short_ears', 'long_teeth', 'short_teeth',
-      'freq_b', 'freq_e', 'freq_T', 'births', ...CAUSES.map((c) => 'deaths_' + c), 'snow', 'temp', 'food', 'tough', 'predators'];
+      'freq_b', 'freq_e', 'freq_T', 'births', 'arrivals', 'new_mutations', ...CAUSES.map((c) => 'deaths_' + c), 'snow', 'temp', 'food', 'tough', 'predators'];
     const rows = [head.join(',')];
     for (const r of this.records) {
       const c = r.comp;
       rows.push([seedCode, r.gen, r.t.toFixed(1), c.n, c.white, c.brown, c.longEars, c.shortEars, c.longTeeth, c.shortTeeth,
-        alleleFreq(c, 'b').toFixed(4), alleleFreq(c, 'e').toFixed(4), alleleFreq(c, 'T').toFixed(4), r.births,
+        alleleFreq(c, 'b').toFixed(4), alleleFreq(c, 'e').toFixed(4), alleleFreq(c, 'T').toFixed(4), r.births, r.arrivals || 0, r.mutations || 0,
         ...CAUSES.map((k) => r.deaths[k] || 0), r.env.snow.toFixed(2), r.env.temp.toFixed(2), r.env.food.toFixed(1), r.env.tough.toFixed(2), r.env.predators].join(','));
     }
     return rows.join('\n');
