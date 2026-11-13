@@ -13,7 +13,7 @@ const STEPS = [
   { at: 44, anchor: '#forecast', title: 'Read the forecast',
     text: 'This strip warns you 20 seconds before each change. Foxes come first at about 2:00, then a long winter at about 4:00.' },
   { at: 60, anchor: '.source[data-src="alpine"]', panel: true, title: 'Think ahead',
-    text: 'On snow, white fur hides from foxes. White (b) is recessive, so it stays hidden in carriers for a few generations. Alpine rabbits need to arrive well before the snow does.' },
+    text: 'On snow, white fur hides from foxes. White (b) is recessive: a Bb rabbit stays brown, and a kit that inherits b from both parents is white. Alpine rabbits need to arrive well before the snow does.' },
   { at: 80, anchor: '.action[data-act="clover"]', panel: true, title: 'Habitat tools',
     text: 'Clover and brush shelters go where you click; a ring shows how far each one reaches. Keep some trust back for when the foxes arrive.' },
 ];

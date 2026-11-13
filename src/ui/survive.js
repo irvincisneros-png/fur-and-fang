@@ -1,6 +1,7 @@
 // Survive 15:00: ranger actions, forecast strip, trust, end screen.
 import { h } from './dom.js';
 import { P } from '../sim/params.js';
+import { genotypeLegend } from './legend.js';
 import { drawAlleleChart, drawDeathBars, COLORS } from './graphs.js';
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -43,7 +44,7 @@ export function buildSurvive(root, ctx) {
     h('h3', { text: 'You are the ranger' }),
     h('p', { class: 'note', text: 'You cannot choose mutations. Habitat and gene flow are your tools, and each costs trust. Read the forecast: variation has to exist before the pressure arrives.' }),
     els.translocate, els.clover, els.shelter, els.fence,
-    h('div', { class: 'row' }, gv, h('label', { for: 'gv2', text: 'Genotype view' })),
+    h('div', { class: 'row' }, gv, h('label', { for: 'gv2', text: 'Genotype view' })), genotypeLegend(),
     tutorial ? '' : h('div', { class: 'btn-row' }, h('button', { class: 'btn small', text: 'Show the tips again', onclick: () => { ui.coach.start(true); } }), h('button', { class: 'btn small', text: 'Restart this seed', onclick: () => app.start('survive', app.sim.seedCode) }), h('button', { class: 'btn small', text: 'New seed', onclick: () => app.start('survive', null) })));
 
   function run(res, okMsg) {
@@ -80,13 +81,28 @@ export function showEnd(root, ctx) {
   const { app } = ctx;
   const ch = app.challenge, sim = app.sim, rep = ch.report();
   const key = 'ff-reflect-' + sim.seedCode;
-  let saved = {}; try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch { /* storage blocked */ }
+  // Saved answers come from storage anyone can edit or fill with junk: only a plain object of strings is accepted.
+  let saved = {}, storageOk = true;
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) for (const [k, v] of Object.entries(raw)) if (/^\d+$/.test(k) && typeof v === 'string') saved[k] = v.slice(0, 4000);
+  } catch { storageOk = false; saved = {}; }
+  const saveNote = h('p', { class: 'note save-note no-print', role: 'status' });
+  const setNote = (ok, when) => {
+    saveNote.classList.toggle('warn', !ok);
+    saveNote.textContent = ok ? (when ? `Saved on this device at ${when}. Nothing is uploaded.` : 'Your answers are saved on this device only as you type. Nothing is uploaded.')
+      : 'Saving is switched off in this browser, so your answers will be lost if you close this page. Use Copy my report or Print to keep them.';
+  };
+  setNote(storageOk);
   const win = rep.outcome === 'survived';
   const star = (got, label) => h('div', { class: 'star' + (got ? ' got' : '') }, h('span', { class: 's', text: '★' }), label);
   const alleleCanvas = h('canvas'), deathCanvas = h('canvas', { class: 'short' });
   const answers = rep.questions.map((q, i) => {
     const ta = h('textarea', { 'aria-label': 'Answer ' + (i + 1) }); ta.value = saved[i] || '';
-    ta.addEventListener('input', () => { saved[i] = ta.value; try { localStorage.setItem(key, JSON.stringify(saved)); } catch { /* ignore */ } });
+    ta.addEventListener('input', () => {
+      saved[i] = ta.value;
+      try { localStorage.setItem(key, JSON.stringify(saved)); setNote(true, new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); } catch { setNote(false); }
+    });
     return ta;
   });
   const text = () => [
@@ -108,7 +124,7 @@ export function showEnd(root, ctx) {
     h('h2', { text: 'What happened' }), h('ol', { class: 'sentences' }, rep.sentences.map((s) => h('li', { text: s }))),
     h('h2', { text: 'Reflect' }),
     rep.questions.map((q, i) => h('div', { class: 'q' }, h('label', { text: `${i + 1}. ${q}` }), answers[i])),
-    h('p', { class: 'note no-print', text: 'Your answers are kept on this device only.' }),
+    saveNote,
     h('div', { class: 'end-actions' }, copyBtn, h('button', { class: 'btn', text: 'Print', onclick: () => window.print() }),
       h('button', { class: 'btn primary', text: 'Play again (same seed)', onclick: () => { root.classList.add('hidden'); app.start('survive', sim.seedCode); } }),
       h('button', { class: 'btn', text: 'New seed', onclick: () => { root.classList.add('hidden'); app.start('survive', null); } }),

@@ -1,6 +1,7 @@
 // Explore mode controls (teacher sandbox).
 import { h, slider, download } from './dom.js';
 import { GENE_INFO } from '../sim/genetics.js';
+import { genotypeLegend } from './legend.js';
 
 const PRESETS = [
   { id: 'snowy', label: 'Snowy alpine', env: { snow: 0.9, temp: -0.8, food: 100, tough: 0 }, predators: 2 },
@@ -74,9 +75,23 @@ export function buildExplore(root, ctx) {
     const b = h('button', { class: 'btn small', text: `${info.label}: ${info.mutantTrait} (${info.mutant})`, onclick: () => { sim().plantMutation(g); b.classList.add('on'); b.textContent = `${info.mutant} planted for next generation`; ui.toast(`Teacher mutation planted: ${info.mutantTrait} (${info.mutant}) appears in the next generation`, 'mut'); } });
     plantBtns[g] = b; return b;
   }));
+  const mutLog = h('div', { class: 'mutlog', role: 'status' });
+  const showMuts = () => {
+    const s = sim(), rows = [];
+    const recs = s.history.records;
+    for (let i = recs.length - 1; i >= 0 && rows.length < 6; i--) {
+      const r = recs[i]; if (r.gen === 0) continue;
+      rows.push(`Generation ${r.gen}: ${ui.mutByGen.get(r.gen) || 0} mutation${(ui.mutByGen.get(r.gen) || 0) === 1 ? '' : 's'} in ${r.births} new kit${r.births === 1 ? '' : 's'}`);
+    }
+    let total = 0; for (const v of ui.mutByGen.values()) total += v;
+    const key = rows.join('|') + total; if (key === mutLog.dataset.key) return; mutLog.dataset.key = key;
+    mutLog.innerHTML = '';
+    mutLog.append(h('b', { text: `Random mutations so far: ${total}` }), rows.length ? h('ol', { class: 'sum-list open', reversed: true }, rows.map((t) => h('li', { text: t }))) : h('div', { class: 'note', text: 'Counts appear after the first generation is born.' }));
+  };
   const genes = h('details', { open: true }, h('summary', { text: 'Genes' }),
     h('p', { class: 'note', text: 'Which allele is dominant? Pick it for each gene.' }), domRows,
     mutSlider,
+    h('p', { class: 'note', text: 'Mutation counter: every new kit has the same small chance of a copying error in each gene, whatever the environment needs. The count includes harmless ones and planted mutations are left out.' }), mutLog,
     h('h3', { text: 'Teacher: plant a mutation' }), planted,
     h('p', { class: 'note', text: 'Real mutations are random: they happen whether or not they help. This button is a classroom shortcut.' }),
     h('div', { class: 'btn-row' }, h('button', { class: 'btn small danger', text: 'Bottleneck: remove 90% at random', onclick: () => { sim().bottleneck(0.9); } })));
@@ -86,33 +101,42 @@ export function buildExplore(root, ctx) {
   gv.addEventListener('change', () => ui.setGenotypeView(gv.checked));
   const view = h('details', {}, h('summary', { text: 'View' }),
     h('div', { class: 'row' }, gv, h('label', { for: 'gv', text: 'Genotype view' })),
-    h('p', { class: 'note', text: 'Rings show the fur genotype: dark = BB, orange = Bb carrier, blue = bb. Click a rabbit for its family tree.' }));
+    genotypeLegend(), h('p', { class: 'note', text: 'Click a rabbit for its family tree.' }));
 
   // ----- Teaching -----
   const poeBody = h('div', { class: 'poe' }, 'Loading prompts…');
-  let prompts = [], pi = 0;
+  let prompts = [], pi = ui.promptIdx || 0;   // survives the restart that "Set up" does
   const showPrompt = () => {
+    if (pi >= prompts.length) pi = 0; ui.promptIdx = pi;
     const p = prompts[pi]; if (!p) return;
     poeBody.innerHTML = '';
     poeBody.append(h('h4', { text: `${pi + 1}/${prompts.length}  ${p.title}` }),
       h('p', {}, h('span', { class: 'tag', text: 'Predict ' }), p.predict),
       h('p', {}, h('span', { class: 'tag', text: 'Observe ' }), p.run),
       h('p', {}, h('span', { class: 'tag', text: 'Explain ' }), p.explain),
+      h('p', { class: 'note', text: 'Set up restarts the valley with the same seed: two rabbits, standard genes, then this experiment\u2019s settings. Use it again to repeat a run under identical conditions.' }),
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn small', text: 'Previous', onclick: () => { pi = (pi + prompts.length - 1) % prompts.length; showPrompt(); } }),
-        h('button', { class: 'btn small primary', text: 'Set up', onclick: () => applySetup(p) }),
+        h('button', { class: 'btn small primary', text: 'Set up (fresh valley)', onclick: () => applySetup(p) }),
         h('button', { class: 'btn small', text: 'Next', onclick: () => { pi = (pi + 1) % prompts.length; showPrompt(); } })));
   };
-  const applySetup = (p) => {
-    const s = p.setup || {};
-    if (s.env) sim().setEnv(s.env);
-    if (s.predators != null) sim().setPredators(s.predators);
-    markPreset(null);
+  // "Set up" restarts the valley from the same seed: two founders, default dominance, default mutation rate, then exactly the settings
+  // this experiment names. Anything the student changed earlier is wiped, so two runs of one experiment differ only in what they change on purpose.
+  const DEFAULT_ENV = { snow: 0, temp: 0, food: 100, tough: 0 };
+  const applySetup = async (p) => {
+    await app.start('explore', sim().seedCode);
+    ui.panel.configure(p.setup || {});
+  };
+  const configure = (s) => {
+    sim().setEnv({ ...DEFAULT_ENV, ...(s.env || {}) });
+    sim().setPredators(s.predators ?? 0);
+    for (const g of Object.keys(s.dominance || {})) { sim().setDominance(g, s.dominance[g]); domSelects[g].value = s.dominance[g]; }
     if (s.mutationRate != null) { sim().setMutationRate(s.mutationRate); mutSlider.set(s.mutationRate); }
+    markPreset(null);
     for (const g of s.plant || []) plantBtns[g]?.click();
     if (s.genotypeView) { gv.checked = true; ui.setGenotypeView(true); }
     syncAll();
-    ui.toast('Experiment set up. Make your prediction, then press play.', 'info');
+    ui.toast('Experiment set up on a fresh valley (same seed code). Make your prediction, then press play.', 'info');
   };
   fetch('src/content/prompts.json').then((r) => r.json()).then((d) => { prompts = d; showPrompt(); }).catch(() => { poeBody.textContent = 'Prompts could not be loaded.'; });
 
@@ -128,7 +152,8 @@ export function buildExplore(root, ctx) {
 
   root.append(valley, genes, view, teach);
   applyPredators();
-  return { update() {
+  return { configure, update() {
+    showMuts();
     for (const g of Object.keys(plantBtns)) if (!sim().pendingMutations.has(g) && plantBtns[g].classList.contains('on')) { plantBtns[g].classList.remove('on'); const i = GENE_INFO[g]; plantBtns[g].textContent = `${i.label}: ${i.mutantTrait} (${i.mutant})`; }
   } };
 }
