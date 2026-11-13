@@ -2,6 +2,7 @@
 import { Simulation } from './sim/sim.js';
 import { createSurvive } from './sim/challenge.js';
 import { createTutorial } from './sim/tutorial.js';
+import { createIslandsLab } from './sim/islands.js';
 import { Tutorial } from './ui/tutorial.js';
 import { randomSeedCode } from './sim/rng.js';
 import { createDebugView } from './ui/debugView.js';
@@ -12,10 +13,15 @@ const params = new URLSearchParams(location.search);
 
 const app = {
   mode: null, sim: null, challenge: null, world: null, paused: false, speed: 1, ui: null,
-  async start(mode, seedCode) {
+  async start(mode, seedCode, opts = {}) {
     const seed = (seedCode || '').trim().toUpperCase() || randomSeedCode();
     if (mode === 'tutorial') { const r = createTutorial(); app.sim = r.sim; app.challenge = r.challenge; }
     else if (mode === 'survive') { const r = createSurvive({ seedCode: seed }); app.sim = r.sim; app.challenge = r.challenge; }
+    else if (mode === 'islands') {
+      app.sim = createIslandsLab({ seedCode: seed, scenario: opts.scenario || 'open', envs: opts.envs });
+      app.challenge = null; app.islandsReopenAt = opts.reopenAt ?? null; app.islandsCarries = 0;
+      if (!opts.scenario) app.islandsDone = [];
+    }
     else { app.sim = new Simulation({ mode: 'explore', seedCode: seed }); app.challenge = null; }
     app.mode = mode; app.speed = 1;
     await ensureWorld();
@@ -80,6 +86,7 @@ function frame(now) {
 app.ui = new UI(app);
 $('#go-explore').addEventListener('click', () => app.start('explore', $('#seed-input').value));
 $('#go-tutorial').addEventListener('click', () => app.start('tutorial'));
+$('#go-islands').addEventListener('click', () => { app.islandsInv = 0; app.start('islands', $('#seed-input').value, { scenario: 'flood', envs: [{ snow: 0.9, temp: -0.7, tough: 0, predators: 5 }, { snow: 0, temp: 0.8, tough: 0.7, predators: 4 }, { snow: 0, temp: 0.8, tough: 0.7, predators: 4 }] }); });
 // First Survive launch on this device: offer the tutorial once.
 const OFFER_KEY = 'ff-tutorial-offer-v1';
 let offered = false;
@@ -94,4 +101,4 @@ $('#offer-tutorial').addEventListener('click', () => closeOffer('tutorial'));
 $('#offer-survive').addEventListener('click', () => closeOffer('survive'));
 $('#title').classList.add('show');
 requestAnimationFrame(frame);
-if (['explore', 'survive', 'tutorial'].includes(params.get('mode'))) app.start(params.get('mode'), params.get('seed'));
+if (['explore', 'survive', 'tutorial', 'islands'].includes(params.get('mode'))) app.start(params.get('mode'), params.get('seed'));

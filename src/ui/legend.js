@@ -12,3 +12,6 @@ export function genotypeLegend() {
   }).catch(() => { for (const d of box.querySelectorAll('.gl-dot')) d.style.display = 'none'; });
   return box;
 }
+
+// Islands lineage rings (same values as LINEAGE_COLORS in src/render/rabbits.js), keyed by the lineage bit: 1 West, 2 East, 4 Islet.
+export const LINEAGE_HEX = { 1: '#1f9e8f', 2: '#e8a33a', 4: '#8e6cc8' };

@@ -3,6 +3,7 @@ import { $, h } from './dom.js';
 import { GraphPanel, TABS, POP_MODES, setGraphScale } from './graphs.js';
 import { buildExplore } from './explore.js';
 import { buildSurvive, updateForecast, showEnd } from './survive.js';
+import { buildIslands } from './islands.js';
 import { P } from '../sim/params.js';
 import { alleleFreq } from '../sim/history.js';
 import { GENE_INFO, genotypeLabel, ALLELE_TRAIT } from '../sim/genetics.js';
@@ -25,7 +26,7 @@ export class UI {
     };
     this.coach = new Coach(this); this.tutorial = new Tutorial(this); this.pendingPhase = null; this.lastPanel = 0; this.followShown = undefined;
     this.el.extinct = $('#extinct-banner');
-    $('#extinct-restart').addEventListener('click', () => this.app.start('explore', this.app.sim.seedCode));
+    $('#extinct-restart').addEventListener('click', () => this.app.start(this.app.mode === 'islands' ? 'islands' : 'explore', this.app.sim.seedCode));
     $('#extinct-new').addEventListener('click', () => this.app.start('explore', null));
     this.el.followBtn.addEventListener('click', () => this.followRandom());
     $('#follow-next').addEventListener('click', () => this.followRandom());
@@ -117,7 +118,8 @@ export class UI {
     this.el.event.classList.add('hidden'); this.el.flash.classList.remove('go'); this.el.extinct.classList.add('hidden');
     this.el.speed.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.s === '1'));
     this.endPlace(); this.closeCard(); this.setPaused(false);
-    this.panel = sv ? buildSurvive(this.el.side, { app: this.app, ui: this, tutorial: tut }) : buildExplore(this.el.side, { app: this.app, ui: this });
+    this.panel = sv ? buildSurvive(this.el.side, { app: this.app, ui: this, tutorial: tut }) : mode === 'islands' ? buildIslands(this.el.side, { app: this.app, ui: this }) : buildExplore(this.el.side, { app: this.app, ui: this });
+    this.app.world?.setLineageView?.(false); this.islFirst = {};
     this.el.toasts.innerHTML = '';
     document.body.classList.remove('panel-open', 'no-side');            // Controls start in the normal state of this layout and mode
     if (mobile()) this.toggleDrawer(false);
@@ -133,7 +135,8 @@ export class UI {
     if (tut) { this.coach.stop(false); this.tutorial.start(); return; }
     this.tutorial.stop();
     const coaching = sv && this.coach.start();
-    if (!sv) { this.coach.stop(false); this.toast('Two rabbits, one valley. Open the Controls to change the world, or plant a mutation. Click a rabbit to follow it.', 'info', 7000); }
+    if (mode === 'islands') { this.coach.stop(false); this.toast(this.app.sim.isl.pops.length > 1 ? `The valley starts split: ${this.app.sim.isl.pops.map((p) => p.name).join(' and ')}. Follow the investigation on the left.` : 'One valley, one population. Use the Water controls to split it.', 'info', 7000); }
+    else if (!sv) { this.coach.stop(false); this.toast('Two rabbits, one valley. Open the Controls to change the world, or plant a mutation. Click a rabbit to follow it.', 'info', 7000); }
     else if (!coaching) this.toast('Foxes arrive at about 2:00. Watch the forecast strip: it shows each change 20 seconds ahead.', 'info');
   }
 
@@ -217,16 +220,31 @@ export class UI {
         if (alleleFreq(comp, e.allele) < 0.05) { shown++; this.toast(`Random mutation: kit #${e.id} carries a new allele ${e.allele} (${ALLELE_TRAIT[e.allele]})`, 'mut'); }
       } else if (e.type === 'extinct') {
         this.toast('The last rabbit is gone. The warren is extinct.', 'bad', 12000);
-        if (this.app.mode === 'explore') this.el.extinct.classList.remove('hidden');     // Explore has no end screen: offer a way on
+        if (this.app.mode === 'explore' || this.app.mode === 'islands') this.el.extinct.classList.remove('hidden');     // Explore has no end screen: offer a way on
       }
       else if (e.type === 'bottleneck') this.toast(`Bottleneck: ${e.removed} rabbits removed at random. Chance, not fitness, decided who stayed.`, 'bad');
       else if (e.type === 'fence') this.toast('Fox fence is up.', 'info');
       else if (e.type === 'phase') { if (e.id === 'foxes' && !this.app.sim.predators.length) this.pendingPhase = e; else this.announce(e); }
       else if (e.type === 'foxin') this.onFoxes(e);
       else if (e.type === 'arrive') this.onArrive(e);
+      else if (this.app.mode === 'islands') this.onIslands(e);
     }
     const others = muts - shown;
     if (others > 0) this.toast(`+${others} other random mutation${others > 1 ? 's' : ''}`, 'mut small', 3000);
+  }
+
+  // ---------- Islands events (spec 7.7) ----------
+  onIslands(e) {
+    const once = (k) => { if (this.islFirst[k]) return false; this.islFirst[k] = true; return true; };
+    const W = { river: 'The river is rising. From the next generation no rabbit can cross.', channel: 'The side channel is filling. From the next generation the islet is cut off from the East.', midFord: 'The middle ford stones are washing out. From the next generation no rabbit can cross to the islet from the West.' };
+    if (e.type === 'islwarn') { if (e.to === 1) this.toast(W[e.what], 'info'); else this.toast('The water is dropping: the crossing reopens at the start of the next generation.', 'info'); }
+    else if (e.type === 'split') this.announce({ id: 'split', icon: '🌊', color: '#bfe3f5', label: `The valley is split: ${e.pops.map((p) => p.name).join(' and ')}`, tip: 'Separate populations, still one species. Nothing about the rabbits has changed.' });
+    else if (e.type === 'rejoin') this.announce({ id: 'rejoin', icon: e.kind === 'ice' ? '🧊' : e.kind === 'sandbar' ? '🏖️' : '☀️', color: '#f3e3b0', label: e.kind === 'ice' ? 'The water has frozen over: an ice bridge' : e.kind === 'sandbar' ? 'A sandbar has formed: a land bridge to the islet' : 'Drought: the water is low and the crossing is back', tip: `${e.joined.join(' and ')} can meet again. Watch the kits.` });
+    else if (e.type === 'storm') this.announce({ id: 'storm', icon: '⛈️', color: '#c9d3e0', label: `Storm! ${e.ids.length} rabbits were swept to the islet`, tip: 'Chance picked them, not fitness.' });
+    else if (e.type === 'carry') this.toast(`${e.ids.length} rabbits carried from ${e.from} to ${e.to}. They bring their alleles with them.`, 'info');
+    else if (e.type === 'stillborn' && once('stillborn')) this.toast('A kit from parents on different sides did not develop. Their hidden DNA no longer fits together well.', 'bad', 8000);
+    else if (e.type === 'hybrid' && e.sterile && once('sterile')) this.toast('This hybrid kit is healthy but will never breed, like a mule.', 'info', 8000);
+    else if (e.type === 'popextinct') this.toast(`The ${e.name} population has died out. Small populations are fragile: that is a real result too.`, 'bad', 9000);
   }
 
   // ---------- valley events: banner + screen-edge wash + a camera cue ----------
@@ -242,7 +260,7 @@ export class UI {
     if (e.id !== 'foxes') this.app.world?.pulse?.(0.16, 2.2);       // pull back a little so the whole valley change is in view
   }
   onFoxes(e) {
-    const w = this.app.world, sv = this.app.mode !== 'explore';
+    const w = this.app.world, sv = this.app.mode === 'survive' || this.app.mode === 'tutorial';
     for (const a of e.added) w?.ping?.(a.x * 0.86, a.z * 0.86, 0xff8a3c, 9, 3);
     if (this.pendingPhase) { this.announce(this.pendingPhase); this.pendingPhase = null; w?.look?.(e.added[0].x * 0.8, e.added[0].z * 0.8, { amount: 0.55, hold: 3.4 }); }
     else if (sv && !e.first) this.toast(`Another fox has moved in: ${e.count} foxes now hunt the valley.`, 'bad');
@@ -339,7 +357,7 @@ export class UI {
   // ---------- per-frame ----------
   refresh(force = false) {
     const { sim, challenge, mode } = this.app; if (!sim) return;
-    const sv = mode !== 'explore', run = mode === 'survive';
+    const sv = mode === 'survive' || mode === 'tutorial', run = mode === 'survive';
     this.el.clock.textContent = run ? mmss(challenge.timeLeft) : mmss(sim.t);
     this.el.gen.textContent = sim.gen;
     this.el.pop.textContent = sim.pop;
