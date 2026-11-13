@@ -21,8 +21,8 @@ export function buildSurvive(root, ctx) {
       FREQ_ROWS.map(([al, lbl, col]) => h('div', { class: 'abar' }, h('span', { text: lbl }), h('i', { style: { '--w': Math.round(s.freq[al] * 100) + '%', '--c': col } }), h('span', { text: Math.round(s.freq[al] * 100) + '%' }))));
     btn.dataset.src = id; return btn;
   });
-  els.translocate = h('div', { class: 'action' }, h('b', { text: 'Translocate' }), h('span', { class: 'cost', text: `${P.COST.translocate} trust` }),
-    h('span', { class: 'desc', text: 'Bring 2 adult rabbits from a neighbouring population. This is gene flow: new alleles enter. Each card shows how common the new alleles are there.' }),
+  els.translocate = h('div', { class: 'action' }, h('b', { text: 'Translocate' }), h('span', { class: 'cost', text: `${ch()?.costOf('translocate') ?? P.COST.translocate} trust` }),
+    h('span', { class: 'desc', text: `Bring ${ch()?.translocateCount ?? P.TRANSLOCATE_COUNT} adult rabbits from a neighbouring population; they join ${ch()?.tutorial ? 'straight away' : 'at the start of the next generation'}. This is gene flow: new alleles enter. Each card shows how common the new alleles are there. Rabbits from the wrong place can struggle in the current weather.` }),
     h('div', { class: 'sources' }, srcBtns), h('span', { class: 'cd', id: 'cd-translocate' }));
   els.translocate.dataset.act = 'translocate';
   const placeAction = (type, title, desc) => {
@@ -30,11 +30,11 @@ export function buildSurvive(root, ctx) {
     const box = h('div', { class: 'action' }, h('b', { text: title }), h('span', { class: 'cost', text: `${P.COST[type]} trust` }), h('span', { class: 'desc', text: desc }), btn, h('span', { class: 'cd' }));
     box.btn = btn; box.cd = box.querySelector('.cd'); box.dataset.act = type; return box;
   };
-  els.clover = placeAction('clover', 'Plant clover patch', `Extra food for ${P.CLOVER_GENS} generations. Click the ground to place it. Takes effect next generation.`);
+  els.clover = placeAction('clover', 'Plant clover patch', `Extra food for the rabbits that live inside its ring (about ${P.CLOVER_FOOD} rabbits' worth), for ${P.CLOVER_GENS} generations. Click the ground to place it. Starts next generation.`);
   els.shelter = placeAction('shelter', 'Brush shelter', `A hedge pile: rabbits near it face 30% fewer predator catches for ${P.SHELTER_GENS} generations.`);
   els.fence = h('div', { class: 'action' }, h('b', { text: 'Fox fence' }), h('span', { class: 'cost', text: `${P.COST.fence} trust` }),
-    h('span', { class: 'desc', text: `Halves the foxes for ${P.FENCE_GENS} generations (from the next generation). Cooldown ${P.COOLDOWN_GENS.fence} generations.` }),
-    h('button', { class: 'btn small', text: 'Build fence', onclick: () => run(ch().fence(), 'Fox fence up: half the foxes for three generations.') }), h('span', { class: 'cd' }));
+    h('span', { class: 'desc', text: `Cuts the foxes to about half (rounded) for ${P.FENCE_GENS} generations, starting next generation. Cooldown ${P.COOLDOWN_GENS.fence} generations.` }),
+    h('button', { class: 'btn small', text: 'Build fence', onclick: () => run(ch().fence(), 'Fox fence ordered: it starts next generation and cuts the foxes to about half for three generations.') }), h('span', { class: 'cd' }));
   els.fence.btn = els.fence.querySelector('.btn'); els.fence.cd = els.fence.querySelector('.cd');
 
   const gv = h('input', { type: 'checkbox', id: 'gv2' });
@@ -57,23 +57,28 @@ export function buildSurvive(root, ctx) {
       const c = ch(), dead = app.sim.ended;
       const cdT = c.cooldown('translocate');
       srcBtns.forEach((b) => { b.disabled = dead || !!c.canAct('translocate'); });
-      const t = els.translocate.querySelector('.cd'); t.textContent = dead ? '' : cdT > 0 ? `Ready in ${cdT} generation${cdT > 1 ? 's' : ''}` : c.trust < P.COST.translocate ? 'Not enough trust yet' : '';
+      const t = els.translocate.querySelector('.cd'); t.textContent = dead ? '' : cdT > 0 ? `Ready in ${cdT} generation${cdT > 1 ? 's' : ''}` : c.trust < c.costOf('translocate') ? 'Not enough trust yet' : '';
       for (const [k, el] of [['clover', els.clover], ['shelter', els.shelter], ['fence', els.fence]]) {
-        const why = c.canAct(k); el.btn.disabled = dead || !!why; el.cd.textContent = dead ? '' : why || (k === 'fence' && c.fenceActive ? 'Fence is up' : '');
+        const why = c.canAct(k); el.btn.disabled = dead || !!why; el.cd.textContent = dead ? '' : why || (k === 'fence' ? (c.fencePending ? 'Fence starts next generation' : c.fenceActive ? 'Fence is up' : '') : '');
       }
     },
   };
 }
 
-// Forecast strip (top centre)
+// Forecast strip (top centre): where the valley is now, the next announced change and the one after it. The countdown is exact
+// only in the last 20 s; further out the strip gives a rough time, so students have to plan from the pattern.
 export function updateForecast(app, els) {
   const c = app.challenge; if (!c) return;
   const f = c.forecast();
   els.now.textContent = `${f.current.icon} ${f.current.label}`;
+  let later = document.getElementById('fc-later');      // made once, beside the next-change box (the HUD's els object is not kept between calls)
+  if (!later) { later = document.createElement('span'); later.id = 'fc-later'; els.next.after(later); }
   if (f.next) {
-    els.next.className = 'fc-next soon';
-    els.next.textContent = `${f.next.icon} ${f.next.announce} in ${Math.ceil(f.inSec)} s`;
-  } else { els.next.className = 'fc-next quiet'; els.next.textContent = 'Forecast: nothing in the next 20 s'; }
+    els.next.className = 'fc-next' + (f.next.soon ? ' soon' : '');
+    els.next.textContent = `${f.next.icon} Next: ${f.next.announce} ${f.next.text}`;
+  } else { els.next.className = 'fc-next quiet'; els.next.textContent = 'Forecast: no more changes announced'; }
+  if (f.later) { later.className = 'fc-next quiet'; later.textContent = `${f.later.icon} Later: ${f.later.label} ${f.later.text}`; later.hidden = false; }
+  else { later.hidden = true; later.textContent = ''; }
 }
 
 // ---------- End screen ----------

@@ -74,6 +74,11 @@ export class TutorialChallenge extends Challenge {
     return out;
   }
 
+  // Small, immediate translocations so each lesson step shows its result at once.
+  costOf(action) { return action === 'translocate' ? P.TUTORIAL.translocateCost : P.COST[action]; }
+  get translocateCount() { return P.TUTORIAL.translocateCount; }
+  arrive(genotypes, source) { return this.sim.addAdults(genotypes, source).length; }
+
   grantTrust(n) { this.trust = Math.max(this.trust, n); return this.trust; }
   cooldown() { return 0; }        // the student uses each tool once or twice, back to back
 }

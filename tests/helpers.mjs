@@ -23,10 +23,10 @@ export function sensiblePlayer(ch) {
     const g = gensTo;
     const t = sim.t, ready = !ch.cooldown('translocate');
     if (ready) {
-      if (g('winter') > 0 && g('winter') < 14) ch.translocate('alpine');
-      else if (t >= w.thaw.start && g('drought') > 0) ch.translocate('desert');
-      else if (t >= w.calm.start && g('winter2') > 0 && g('winter2') < 14) ch.translocate('alpine');
-      else if (g('finale') > 0 && g('finale') < 6) ch.translocate('river');
+      if (g('winter') > 0 && g('winter') < 5) ch.translocate('alpine');
+      else if (t >= w.thaw.start && g('drought') > 0 && g('drought') < 9) ch.translocate('desert');
+      else if (t >= w.calm.start && g('winter2') > 0 && g('winter2') < 5) ch.translocate('alpine');
+      else if (g('finale') > 0 && g('finale') < 5) ch.translocate('river');
     }
     if (sim.env.predators > 0 && sim.pop < 90 && ch.trust >= 16 && !ch.canAct('shelter')) { const b = busiestBurrow(sim); ch.shelter(b.x, b.z); }
     if (sim.env.food < P.FOOD_BASE * 0.8 && ch.trust >= 14 && !ch.canAct('clover')) { const b = busiestBurrow(sim); ch.clover(b.x, b.z); }
@@ -44,11 +44,13 @@ export function forecastPlayer(ch) {
   const sim = ch.sim;
   return () => {
     const f = ch.forecast();
-    // Which change to get ready for: the next one once it is within about two minutes (recessive alleles need a head start),
-    // otherwise the one the valley is in now. Foxes need no new allele, so look past them to the change after.
+    // Which change to get ready for: the next one once the strip says it is about 45 seconds away or less (recessive alleles need a
+    // head start, but the wrong animals arriving early die in the current weather), otherwise what the valley is in now.
+    // Foxes need no new allele, so look past them to the change after.
+    const head = 45;
     let src = null;
-    if (f.next && SOURCE_FOR[f.next.id] && (f.next.sec <= 120 || !SOURCE_FOR[f.current.id])) src = SOURCE_FOR[f.next.id];
-    else if (f.next && !SOURCE_FOR[f.next.id] && f.later) src = SOURCE_FOR[f.later.id];
+    if (f.next && SOURCE_FOR[f.next.id] && f.next.sec <= head) src = SOURCE_FOR[f.next.id];
+    else if (f.next && !SOURCE_FOR[f.next.id] && f.later && f.later.sec <= head) src = SOURCE_FOR[f.later.id];
     else src = SOURCE_FOR[f.current.id] || null;
     if (src && !ch.canAct('translocate')) ch.translocate(src);
     const foxes = sim.predators.length;
@@ -67,7 +69,7 @@ export function panickyPlayer(ch) {
     const cur = ch.forecast().current.id;
     const src = sim.env.snow > 0.3 ? 'alpine' : cur === 'drought' ? 'desert' : 'river';
     if (!ch.canAct('translocate')) ch.translocate(src);
-    if (!ch.canAct('clover')) { const b = busiestBurrow(sim); ch.clover(b.x, b.z); }
+    if (!process.env.NOCLOVER && !ch.canAct('clover')) { const b = busiestBurrow(sim); ch.clover(b.x, b.z); }
   };
 }
 
@@ -106,5 +108,24 @@ export const balanceSeeds = (n = 40, prefix = 'AUD') => Array.from({ length: n }
 export function tally(strategy, seeds) {
   const out = { survived: 0, stars: [0, 0, 0, 0], n: seeds.length };
   for (const s of seeds) { const r = playRun(s, strategy); if (r.survived) out.survived++; out.stars[r.stars.count]++; }
+  return out;
+}
+
+// The balance targets. A faster 20-seed version runs here; `npm run balance` runs the same checks over 40 (and 80 more) seeds.
+// Limits are fractions of the seeds tried, so the same numbers work for any sample size (with a little room for a small sample).
+export const TARGETS = {
+  doNothingMax: 0.15, forecastMin: 0.8, spamMax: 0.5, panickyMin: 0.3, panickyMax: 0.55,
+};
+export function checkTargets(seeds, slack = 0) {
+  const n = seeds.length, rate = (k) => tally(k, seeds);
+  const out = [];
+  const none = rate('none');
+  out.push([none.survived / n <= TARGETS.doNothingMax + slack, `do nothing survives ${none.survived}/${n}`]);
+  out.push([none.stars[3] === 0, `do nothing never earns 3 stars (${none.stars[3]})`]);
+  const fc = rate('forecast');
+  out.push([fc.survived / n >= TARGETS.forecastMin - slack, `forecast-only planner survives ${fc.survived}/${n}`]);
+  for (const k of SINGLE_ACTION_SPAM) { const r = rate(k); out.push([r.survived / n <= TARGETS.spamMax + slack, `${STRATEGY_LABEL[k]} survives ${r.survived}/${n}`]); }
+  const pk = rate('panicky');
+  out.push([pk.survived / n >= TARGETS.panickyMin - slack && pk.survived / n <= TARGETS.panickyMax + slack, `panicky spender survives ${pk.survived}/${n}`]);
   return out;
 }

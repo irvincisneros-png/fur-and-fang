@@ -30,7 +30,7 @@ Starting population: 2 rabbits (Explore, like PhET) or 12 (Survive), all BB EE t
 PhET lets you click "add mutation" which reads as *organisms/players choose what they need* — a classic
 misconception. We do:
 - **Random mutation ON by default**: each new gamete has a small chance per gene to flip allele
-  (Explore: slider 0–5 % ; Survive: fixed 0.6 %). Mutations arise regardless of need. A toast + a sparkle on
+  (Explore: slider 0–5 % ; Survive: fixed 0.05 %). Mutations arise regardless of need. A toast + a sparkle on
   the kit announces "Random mutation: kit #214 carries a new allele *b* (white fur)".
 - Explore also has the PhET-style "Add mutation next generation" button per gene, labelled
   **"Teacher: plant a mutation"** with a one-line note that real mutations are random.
@@ -76,8 +76,8 @@ The warren must still have ≥ 2 rabbits at 15:00 sim time (90 generations). Los
 ("extinct at 9:42, generation 58") — show the run report either way.
 
 ### Scheduled valley events (same every run per seed, with jitter)
-Forecast strip at the top shows the next event **2 generations (20 s) ahead** with an icon and plain words
-("Cold front: snow arriving in 20 s").
+Forecast strip at the top shows the current phase, the **next** announced change and the **later** one after it, with an icon and
+plain words. The countdown is exact only in the last 20 s; further out it is rough ("in about 1½ min"), so students plan from it.
 1. 0:00–2:00 Lush spring meadow, warm, no predators (grow!).
 2. ~2:00 Foxes arrive (introduced predator) — 2 foxes, rising to 4.
 3. ~4:00 Long winter: snow → 0.9, temp → −0.8 over 1 min, holds 2 min. Needs white fur + short ears.
@@ -86,13 +86,14 @@ Forecast strip at the top shows the next event **2 generations (20 s) ahead** wi
 6. ~11:00 Second winter, harsher, with predators peaking.
 7. ~13:30 Mixed finale: patchy snow 0.5, mild cold, high predators.
 
-### Ranger actions (budget: "trust" points, +1 per generation survived, +bonus for high diversity)
-- **Translocate** (cost 6): bring 2 adult rabbits from a neighbouring population. Three sources, each with a
+### Ranger actions (budget: "trust" points, +1.5 per generation survived, +bonus for high diversity)
+- **Translocate** (cost 8): bring 8 adult rabbits from a neighbouring population; they walk in at the start of the next generation and
+  then face every hazard like residents (wrong-source animals die fast in the current weather). Three sources, each with a
   shown allele card: *Alpine ridge* (mostly b, E, t), *Desert flats* (mostly B, e, T), *River forest*
-  (mixed, high diversity). This is gene flow — new alleles enter. Max once per 3 generations.
-- **Plant clover patch** (cost 4): +food for 4 generations, at a spot you click on the terrain.
+  (a little of everything). This is gene flow — new alleles enter. Max once per 4 generations; capped by the 600 population limit.
+- **Plant clover patch** (cost 4): +food for 4 generations, for the rabbits inside its ring only (local feeding), at a spot you click on the terrain.
 - **Brush shelter** (cost 5): a hedge pile you place; rabbits near it get −30 % predation for 5 generations.
-- **Fox fence** (cost 8): halves predators for 3 generations. Cooldown 10 generations.
+- **Fox fence** (cost 8): from the next generation, cuts predators to about half (rounded) for 3 generations. Cooldown 10 generations.
 The actions must never make survival trivial; core lesson is "variation must already exist before the
 pressure arrives" — the forecast + translocation is how a smart player gets variation in time.
 
@@ -157,3 +158,7 @@ age, alive, x, z, state:'idle'|'hop'|'flee'|'dying', dyingCause, parents:[id,id]
 `sim.predators` `{id,x,z,targetId,state}` ; `sim.env {snow,temp,food,tough,predators}` ;
 `sim.events` queue `{type:'birth'|'death'|'mutation'|'catch'|'gen', ...}` drained by render/UI each frame.
 Sim owns positions (simple steering: wander near burrows, flee from predators, gather at clover).
+
+### Balance targets (tests/helpers.mjs `checkTargets`; `npm test` runs 20 seeds, `npm run balance` 40 + 80 fresh)
+Do nothing <= 15 % survive and never 3 stars; forecast-only planner (uses only `challenge.forecast()`) >= 80 %; every single-action
+spam <= 50 %; panicky spender 30-55 %. All constants live in `src/sim/params.js`.

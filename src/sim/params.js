@@ -30,7 +30,7 @@ export const P = {
   CLOVER_GENS: 4, SHELTER_GENS: 5, CLOVER_RADIUS: 8, SHELTER_RADIUS: 12,
 
   // Mutation
-  MUT_SURVIVE: 0.002,
+  MUT_SURVIVE: 0.0005,
   MUT_EXPLORE: 0.003,
 
   // Movement (cosmetic; the sim owns positions)
@@ -43,17 +43,18 @@ export const P = {
   EXPLORE_START_POP: 2,
   FOOD_BASE: 70,
   TRUST_START: 12,
-  TRUST_PER_GEN: 1,
+  TRUST_PER_GEN: 1.5,
   TRUST_DIVERSITY: 0.5,
-  COST: { translocate: 6, clover: 4, shelter: 5, fence: 8 },
-  COOLDOWN_GENS: { translocate: 3, fence: 10 },
+  COST: { translocate: 8, clover: 4, shelter: 5, fence: 8 },
+  COOLDOWN_GENS: { translocate: 4, fence: 10 },
   FENCE_GENS: 3,
-  TRANSLOCATE_COUNT: 2,
+  TRANSLOCATE_COUNT: 8,         // adults per translocation (a group big enough to shift a 150-strong warren)
   FORECAST_LEAD: 20,
+  TUTORIAL: { translocateCost: 6, translocateCount: 2 },   // the guided tutorial brings a pair, at once, for 6 trust
   // Allele cards: chance each allele is the mutant one in a source population
   SOURCES: {
     alpine: { name: 'Alpine ridge', blurb: 'Cold, snowy ridge. Mostly white fur and short ears.', freq: { b: 0.88, e: 0.08, T: 0.1 } },
     desert: { name: 'Desert flats', blurb: 'Hot, dry plains. Mostly brown fur, long ears, long teeth.', freq: { b: 0.06, e: 0.9, T: 0.9 } },
-    river: { name: 'River forest', blurb: 'Mixed and varied. A bit of everything.', freq: { b: 0.45, e: 0.45, T: 0.45 } },
+    river: { name: 'River forest', blurb: 'Mixed and varied. A bit of everything.', freq: { b: 0.1, e: 0.1, T: 0.1 } },
   },
 };

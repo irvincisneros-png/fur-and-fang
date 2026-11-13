@@ -110,27 +110,32 @@ export class Challenge {
   get fenceActive() { return this.sim.gen > this.lastFence && this.sim.gen < this.sim.fenceUntil; }
   get fenceGensLeft() { return this.fenceActive ? this.sim.fenceUntil - this.sim.gen : 0; }
 
+  // Trust cost and group size of a translocation, and how newcomers come in: the tutorial overrides these (small, immediate).
+  costOf(action) { return P.COST[action]; }
+  get translocateCount() { return P.TRANSLOCATE_COUNT; }
+  arrive(genotypes, source) { return this.sim.queueAdults(genotypes, source); }       // they walk in at the start of the next generation
+
   canAct(action) {
     if (this.sim.ended) return 'The run is over.';
-    if (this.trust < P.COST[action]) return `Needs ${P.COST[action]} trust.`;
+    if (this.trust < this.costOf(action)) return `Needs ${this.costOf(action)} trust.`;
     const cd = this.cooldown(action); if (cd > 0) return `Ready in ${cd} generation${cd > 1 ? 's' : ''}.`;
     return null;
   }
 
-  spend(action, extra = {}) { this.trust -= P.COST[action]; this.log.push({ action, gen: this.sim.gen, t: this.sim.t, ...extra }); }
+  spend(action, extra = {}) { this.trust -= this.costOf(action); this.log.push({ action, gen: this.sim.gen, t: this.sim.t, ...extra }); }
 
   translocate(source) {
     const s = P.SOURCES[source]; if (!s) return { ok: false, reason: 'Unknown source.' };
     const why = this.canAct('translocate'); if (why) return { ok: false, reason: why };
     const room = P.CAP - this.sim.liveN - this.sim.pendingCount;     // the valley holds 600 at most: checked before any trust is spent
     if (room <= 0) return { ok: false, reason: `The valley is full (${P.CAP} rabbits). There is no room for newcomers.` };
-    const n = Math.min(P.TRANSLOCATE_COUNT, room);
+    const want = this.translocateCount, n = Math.min(want, room);
     const gts = []; for (let i = 0; i < n; i++) gts.push(drawGenotype(s.freq, this.rng));
-    this.sim.queueAdults(gts, source);                               // they walk in at the start of the next generation
+    this.arrive(gts, source);
     this.lastTranslocate = this.sim.gen;
     this.spend('translocate', { source, count: n, genotypes: gts });
-    this.sim.events.push({ type: 'ordered', source, count: n, partial: n < P.TRANSLOCATE_COUNT });
-    return { ok: true, count: n, genotypes: gts, partial: n < P.TRANSLOCATE_COUNT };
+    this.sim.events.push({ type: 'ordered', source, count: n, partial: n < want });
+    return { ok: true, count: n, genotypes: gts, partial: n < want };
   }
 
   placePatch(type, x, z) {
@@ -167,7 +172,7 @@ export function createSurvive(opts = {}) {
 }
 
 // ---------- run report ----------
-const CAUSE_PHRASE = { predator: 'to be caught by foxes', cold: 'to die of cold', heat: 'to die of heat', starved: 'to starve', old: 'to die of old age' };
+const CAUSE_PHRASE = { predator: 'were caught by foxes', cold: 'died of cold', heat: 'died of heat', starved: 'starved', old: 'died of old age' };
 const ALLELE_NAME = { b: ['white fur', 'brown fur', 'fur'], e: ['long ears', 'short ears', 'ears'], T: ['long teeth', 'short teeth', 'teeth'] };
 const RELEVANT = { b: ['predator'], e: ['cold', 'heat', 'predator'], T: ['starved'] };
 const RABBIT_WORD = { white: 'white', brown: 'brown', longEars: 'long-eared', shortEars: 'short-eared', longTeeth: 'long-toothed', shortTeeth: 'short-toothed' };
@@ -187,9 +192,10 @@ export function buildReport(ch) {
   const comp = composition(sim.rabbits);
   const stars = ch.stars();
 
-  const deathsByWindow = ch.windows.map((w) => {
-    const g0 = Math.floor(w.start / P.GEN_LEN), g1 = Math.ceil(w.end / P.GEN_LEN) - 1;
-    return { id: w.id, label: w.label, deaths: sim.history.totalDeaths(g0, g1) };
+  // Deaths are assigned by the moment they happened, to the event interval [start, end) that contains it (the last event runs to the end).
+  const deathsByWindow = ch.windows.map((w, i) => {
+    const d = sim.history.deathsBetween(w.start, i === ch.windows.length - 1 ? Infinity : w.end);
+    return { id: w.id, label: w.label, deaths: d };
   });
 
   const cands = [];
@@ -204,33 +210,46 @@ export function buildReport(ch) {
   }
   cands.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
   const used = new Set(), sentences = [];
+  // Translocated adults that joined the warren in generations g0 to g1 (they arrive at the start of the generation after the order).
+  const arrivedIn = (g0, g1) => ch.log.reduce((n, l) => (l.action === 'translocate' && l.gen + 1 >= g0 && l.gen + 1 <= g1 ? n + (l.count || 0) : n), 0);
   for (const c of cands) {
     if (sentences.length >= 3 || Math.abs(c.delta) < 0.04 || used.has(c.w.id)) continue;
     used.add(c.w.id);
-    const [mut, norm] = ALLELE_NAME[c.al]; const [km, kn] = TRAIT_KEYS[c.al];
+    const [mut] = ALLELE_NAME[c.al]; const [km, kn] = TRAIT_KEYS[c.al];
     const up = c.delta > 0;
-    const trait = up ? mut : mut; // the tracked allele's trait either way
     const winKey = (up ? km : kn), loseKey = (up ? kn : km);
     const wr = windowRates(recs, c.g0, c.g1 - 1, winKey), lr = windowRates(recs, c.g0, c.g1 - 1, loseKey);
-    let why = '';
-    if (wr.n > 0 && lr.n > 0) {
-      let bestC = null, bestDiff = 0;
-      for (const cause of RELEVANT[c.al]) { const diff = lr.d[cause] / lr.n - wr.d[cause] / wr.n; if (diff > bestDiff) { bestDiff = diff; bestC = cause; } }
-      if (bestC) {
-        const rw = wr.d[bestC] / wr.n, rl = lr.d[bestC] / lr.n;
-        const loser = RABBIT_WORD[loseKey];
-        why = rw > 0 ? `: ${loser} rabbits were ${(rl / rw).toFixed(1)}× more likely ${CAUSE_PHRASE[bestC]}` : `: ${loser} rabbits suffered ${lr.d[bestC]} deaths ${bestC === 'predator' ? 'from foxes' : bestC === 'starved' ? 'from hunger' : 'from ' + bestC + ' stress'} against none for the others`;
-      }
+    // 1. What was observed: the frequency change itself, over the generations it was measured across (a little wider than the event).
+    let text = `From generation ${c.g0} to ${c.g1} (around the ${c.w.label.toLowerCase()}), the ${mut} allele (${c.al}) ${up ? 'rose' : 'fell'} from ${pct(c.f0)} to ${pct(c.f1)} of the warren's alleles.`;
+    // 2. Evidence about selection: how often each type died of the relevant hazard, out of the rabbits alive at the start of each generation.
+    let best = null, bestDiff = 0;
+    if (wr.n > 0 && lr.n > 0) for (const cause of RELEVANT[c.al]) { const diff = lr.d[cause] / lr.n - wr.d[cause] / wr.n; if (diff > bestDiff) { bestDiff = diff; best = cause; } }
+    if (best && bestDiff >= 0.05) {
+      const rl = lr.d[best] / lr.n, rw = wr.d[best] / wr.n;
+      text += ` Counting the rabbits alive at the start of each of those generations, ${pct(rl)} of the ${RABBIT_WORD[loseKey]} ones ${CAUSE_PHRASE[best]}, against ${pct(rw)} of the ${RABBIT_WORD[winKey]} ones. That difference is consistent with selection favouring the ${RABBIT_WORD[winKey]} rabbits.`;
+    } else {
+      text += ' The death records show no clear difference between the two types, so this change is not evidence of selection on its own.';
     }
-    sentences.push(`During the ${c.w.label.toLowerCase()}, the ${trait} allele (${c.al}) ${up ? 'rose' : 'fell'} from ${pct(c.f0)} to ${pct(c.f1)}${why}.`);
+    // 3. Other things that also move allele frequencies.
+    const gf = arrivedIn(c.g0, c.g1);
+    const small = Math.min(...recs.filter((r) => r.gen >= c.g0 && r.gen <= c.g1).map((r) => r.pop));
+    const other = [];
+    if (gf > 0) other.push(`${gf} translocated rabbits joined in this period, and gene flow changes frequencies too`);
+    if (small < 30) other.push(`the warren had as few as ${small} rabbit${small === 1 ? '' : 's'}, where chance (genetic drift) can shift frequencies even without selection`);
+    if (other.length) text += ` Keep in mind that ${other.join(', and ')}.`;
+    sentences.push(text);
   }
   const peak = recs.reduce((m, r) => (r.pop > m.pop ? r : m), { pop: 0, gen: 0 });
   const tot = sim.history.totalDeaths(); const top = CAUSES.filter((c) => c !== 'old').sort((x, y) => tot[y] - tot[x])[0];
+  const lastGens = recs.slice(-5), lastDeaths = lastGens.reduce((o, r) => { for (const c of CAUSES) o[c] = (o[c] || 0) + (r.deaths[c] || 0); return o; }, {});
+  const lastTop = CAUSES.filter((c) => c !== 'old').sort((x, y) => (lastDeaths[y] || 0) - (lastDeaths[x] || 0))[0];
+  const causeWord = (c) => (c === 'predator' ? 'foxes' : c === 'starved' ? 'hunger' : c);
   const fillers = [
     `The warren peaked at ${peak.pop} rabbits in generation ${peak.gen}.`,
-    `Across the whole run the biggest killer was ${top === 'predator' ? 'foxes' : top === 'starved' ? 'hunger' : top} (${tot[top]} deaths).`,
-    outcome === 'extinct' ? `The warren died out in generation ${sim.gen}: once the allele a change needed was missing, selection had nothing to work with.`
-      : `${allelesPresent(comp)} of the 6 alleles survived to the end, so the warren still carries variation for the next change.`,
+    `Across the whole run the biggest killer was ${causeWord(top)} (${tot[top]} deaths).`,
+    outcome === 'extinct'
+      ? `The warren died out in generation ${sim.gen}, during the ${ch.windowAt(sim.t).label.toLowerCase()}. In its last ${lastGens.length} generations the main cause of death was ${causeWord(lastTop)} (${lastDeaths[lastTop] || 0} deaths), and ${allelesPresent(recs[recs.length - 1].comp)} of the 6 alleles were still present at the start of the final generation, so these records alone cannot say whether the pressure, the small numbers or chance ended the warren.`
+      : `${allelesPresent(comp)} of the 6 alleles were still present at the end, so the warren still carries variation for selection to work on.`,
   ];
   for (const f of fillers) if (sentences.length < 3) sentences.push(f);
 

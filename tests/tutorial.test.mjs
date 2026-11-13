@@ -71,11 +71,11 @@ test('tutorial: trust is granted by the script and ranger tools have no cooldown
   const { sim, challenge: ch } = createTutorial();
   assert.equal(ch.trust, 0);
   assert.equal(ch.translocate('alpine').ok, false);
-  assert.equal(ch.grantTrust(P.COST.translocate), P.COST.translocate);
+  assert.equal(ch.grantTrust(P.TUTORIAL.translocateCost), P.TUTORIAL.translocateCost);
   const pop = sim.pop;
   assert.equal(ch.translocate('alpine').ok, true);
-  assert.equal(sim.pop, pop + P.TRANSLOCATE_COUNT);
-  ch.grantTrust(P.COST.translocate);
+  assert.equal(sim.pop, pop + P.TUTORIAL.translocateCount);   // the tutorial's newcomers arrive at once
+  ch.grantTrust(P.TUTORIAL.translocateCost);
   assert.equal(ch.translocate('river').ok, true);
   ch.grantTrust(P.COST.shelter);
   assert.equal(ch.shelter(5, 5).ok, true);

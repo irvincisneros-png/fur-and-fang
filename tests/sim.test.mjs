@@ -208,11 +208,14 @@ test('translocation: newcomers walk in from the valley rim to a warren, and the 
   sim.drainEvents();
   const res = challenge.translocate('alpine');
   assert.equal(res.ok, true);
+  assert.equal(sim.drainEvents().find((e) => e.type === 'arrive'), undefined, 'nobody arrives mid-generation');
+  assert.equal(sim.pop, P.SURVIVE_START_POP);
+  sim.advance(P.GEN_LEN - sim.genT);                       // the generation boundary: the newcomers walk in
   const ev = sim.drainEvents().find((e) => e.type === 'arrive');
   assert.ok(ev && ev.ids.length === P.TRANSLOCATE_COUNT && ev.edge === 'north');
   const rs = ev.ids.map((id) => sim.getRabbit(id));
   for (const r of rs) assert.ok(Math.hypot(r.x, r.z) > P.ROAM - 6, 'starts at the rim');
-  sim.advance(9.5);                                       // still in generation 0: no fox, nothing to flee from
+  sim.advance(9.5);                                       // most of generation 1: no fox, nothing to flee from
   for (const r of rs) if (r.alive) assert.ok(Math.hypot(r.x, r.z) < P.ROAM - 12, 'has walked into the valley');
   for (const r of rs) {
     for (let i = 0; i < 400 && r.hurry; i++) sim.step(0.1);
