@@ -57,4 +57,23 @@ export const P = {
     desert: { name: 'Desert flats', blurb: 'Hot, dry plains. Mostly brown fur, long ears, long teeth.', freq: { b: 0.06, e: 0.9, T: 0.9 } },
     river: { name: 'River forest', blurb: 'Mixed and varied. A bit of everything.', freq: { b: 0.1, e: 0.1, T: 0.1 } },
   },
+
+  // Islands update (docs/specs/2026-11-13-islands.md)
+  ISLANDS: {
+    K: 30,                      // hidden loci
+    SUB_RATE: 0.16,             // chance per population per generation of one hidden change
+    H_V: 12, S_V: 4,            // viability half-point and steepness
+    H_F: 7, S_F: 4,             // fertility half-point and steepness
+    CARRY_HEAL: 0.5,            // hidden differences removed per carried rabbit (compressed time, see spec 4.7)
+    ONE_SPECIES: 0.8, TWO_SPECIES: 0.2,
+    FLOOD_W: 7, CHANNEL_W: 3, WATER_RAMP: 8,
+    CHANNEL: { z0: -10, z1: 22, bulge: 26 },
+    CAP_SHARE: [270, 250, 80],
+    WANDER_R: [20, 20, 9],
+    LAB: { startPop: 60, freq: { b: 0.5, e: 0.5, T: 0.5 }, mutationRate: 0, food: [110, 90, 22] },
+    STORM_CHOICES: [2, 4, 8, 16],
+    TEST_PAIRS: 12, TEST_KITS: 3,
+    TRIAL_GENS: 15, TRIAL_RUNS: 20,
+    CARRY_COUNT: 4,
+  },
 };
