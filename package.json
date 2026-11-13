@@ -7,6 +7,6 @@
   "scripts": {
     "serve": "python3 devserver.py 8500",
     "test": "node --test tests/*.test.mjs",
-    "balance": "node --test tests/sweep.balance.mjs"
+    "balance": "node --test tests/sweep.balance.mjs tests/sweep.lineages.balance.mjs"
   }
 }

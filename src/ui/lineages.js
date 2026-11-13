@@ -22,10 +22,10 @@ export function buildLineages(root, ctx) {
   const btn = (label, cost, fn) => h('button', { class: 'btn small act', onclick: () => { const r = fn(); if (r && !r.ok) ui.toast(r.reason, 'bad'); else app.ui.refresh(true); } }, label, h('small', { text: ` ${cost} trust` }));
   const carryWE = btn('Carry 4: West → East', L.CARRY_COST, () => ch().carry(0));
   const carryEW = btn('Carry 4: East → West', L.CARRY_COST, () => ch().carry(1));
-  const fenceW = btn('Fox fence: West', P.COST.fence, () => ch().fence(0));
-  const fenceE = btn('Fox fence: East', P.COST.fence, () => ch().fence(1));
-  const clover = btn('Clover patch', P.COST.clover, () => { ui.beginPlace('clover'); return { ok: true }; });
-  const shelter = btn('Brush shelter', P.COST.shelter, () => { ui.beginPlace('shelter'); return { ok: true }; });
+  const fenceW = btn('Fox fence: West', L.COST.fence, () => ch().fence(0));
+  const fenceE = btn('Fox fence: East', L.COST.fence, () => ch().fence(1));
+  const clover = btn('Clover patch', L.COST.clover, () => { ui.beginPlace('clover'); return { ok: true }; });
+  const shelter = btn('Brush shelter', L.COST.shelter, () => { ui.beginPlace('shelter'); return { ok: true }; });
   const test = btn('Test cross', L.TEST_COST, () => { const r = ch().testCross(); if (r.ok) ui.toast(`Test cross: ${pct(r.born / r.conceived)} of kits born alive, ${pct(r.phi)} able to breed.`, 'info', 7000); return r; });
   const banks = h('div', { class: 'banks' });
   const meter = h('div', { class: 'meter-box' });
@@ -38,7 +38,7 @@ export function buildLineages(root, ctx) {
       h('div', { class: 'act-col' }, carryWE, carryEW),
       h('p', { class: 'note', text: 'Carrying moves alleles between the banks and keeps the lineages alike. It works only while the river is up.' }),
       h('div', { class: 'act-col' }, fenceW, fenceE, clover, shelter),
-      h('p', { class: 'note', text: `Your tools work on the bank you use them on. A fence starts next generation and lasts ${L.FENCE_GENS}.` })),
+      h('p', { class: 'note', text: `Your tools work on the bank you use them on. A fence starts next generation and lasts ${L.FENCE_GENS} generations. Clover feeds the rabbits inside its ring for ${L.LIN.cloverGens} generations. Brush shelters them from foxes, heat and cold for ${L.LIN.shelterGens}.` })),
     h('details', { open: true }, h('summary', { text: 'Still one species?' }), meter, h('div', { class: 'act-col' }, test),
       h('div', { class: 'row' }, lv, h('label', { for: 'lv2', text: 'Lineage view' })),
       h('p', { class: 'legend-line' }, [['West', LINEAGE_HEX[1]], ['East', LINEAGE_HEX[2]], ['Mixed', '#ffffff'], ['Cannot breed', '#8a8a8a']].map(([t, c]) => h('span', {}, h('i', { class: 'sw', style: { background: c } }), t + '  ')))));

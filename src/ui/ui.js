@@ -285,7 +285,7 @@ export class UI {
   beginPlace(type) {
     this.placing = type;
     const touch = window.matchMedia('(hover: none)').matches;
-    this.el.bannerText.textContent = type === 'clover' ? `${touch ? 'Tap' : 'Click'} the ground to plant clover. The ring shows which rabbits it will feed.` : `${touch ? 'Tap' : 'Click'} the ground to build a brush shelter. Rabbits inside the ring are harder to catch.`;
+    this.el.bannerText.textContent = type === 'clover' ? `${touch ? 'Tap' : 'Click'} the ground to plant clover. The ring shows which rabbits it will feed.` : `${touch ? 'Tap' : 'Click'} the ground to build a brush shelter. Rabbits inside the ring are harder to catch${this.app.sim.lin ? ', and feel less heat and cold' : ''}.`;
     this.el.banner.classList.remove('hidden');
     if (mobile()) { document.body.classList.remove('panel-open'); this.syncInsets(); }
     document.body.classList.add('placing');
@@ -294,7 +294,7 @@ export class UI {
   movePreview(cx, cy) {
     const w = this.app.world, gp = w?.groundPoint?.(cx, cy);
     if (!gp) { w?.setPreview?.(null); return; }
-    w.setPreview?.(this.placing, gp.x, gp.z, this.placing === 'clover' ? P.CLOVER_RADIUS : P.SHELTER_RADIUS);
+    w.setPreview?.(this.placing, gp.x, gp.z, this.placing === 'clover' ? (this.app.sim.lin?.cloverR ?? P.CLOVER_RADIUS) : (this.app.sim.lin?.shelterR ?? P.SHELTER_RADIUS));
   }
   followRandom() {
     const live = this.app.sim.rabbits.filter((r) => r.alive && r.id !== this.cardId);
@@ -368,7 +368,7 @@ export class UI {
     this.el.pop.textContent = sim.pop;
     if (sv) {
       this.el.trust.textContent = Math.floor(challenge.trust);
-      this.el.trust.classList.toggle('low', challenge.trust < P.COST.clover);
+      this.el.trust.classList.toggle('low', challenge.trust < (challenge.costOf?.('clover') ?? P.COST.clover));
       updateForecast(this.app, { now: this.el.now, next: this.el.next });
     }
     this.el.seed.textContent = 'Seed ' + sim.seedCode;

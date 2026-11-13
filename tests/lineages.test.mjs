@@ -1,32 +1,26 @@
-// Two Lineages: the checks that hold today (spec 11.3 B5, B6, B8 and determinism).
-// Survival balance (B1 to B4) is NOT tuned yet: survival is close to 40-65 % for every strategy. See docs/specs/2026-11-13-islands.md.
+// Two Lineages: the balance targets (spec 11.3 B1 to B6) on a few seeds with wide slack, plus determinism and the lost-lineage ending.
+// `npm run balance` checks the same targets over 40 seeds (AUD) and then 40 fresh seeds (QQQ) with a tight slack.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ltally, playLineages } from './helpers.lineages.mjs';
+import { playLineages, checkLineageTargets, lineageSeeds, cachedTally } from './helpers.lineages.mjs';
 
-const seeds = Array.from({ length: 10 }, (_, i) => 'LIN' + String(i).padStart(3, '0'));
-const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const seeds = lineageSeeds(12, 'LIN');
 
-test('B5 the outcome is not a foregone conclusion', () => {
-  const t = ltally('sidePlanner', seeds), all = t.bands.one + t.bands.between + t.bands.two;
-  assert.ok(all > 0);
-  const used = Object.values(t.bands).filter((n) => n > 0).length;
-  assert.ok(used >= 2, JSON.stringify(t.bands));
-  for (const n of Object.values(t.bands)) assert.ok(n / all <= 0.85, JSON.stringify(t.bands));
-});
-
-test('B6 gene flow shows: carrying keeps the lineages alike, isolation lets them drift apart', () => {
-  const c = ltally('carrySpam', seeds), n = ltally('none', seeds);
-  if (c.D.length) assert.ok(med(c.D) <= 4, `carry median D ${med(c.D)}`);
-  assert.ok(med(n.D) >= 6, `no-carry median D ${med(n.D)}`);
+test('balance targets B1 to B6 hold on a small sample (wide slack: the full sweep is `npm run balance`)', () => {
+  for (const [ok, msg] of checkLineageTargets(seeds, 0.2)) assert.ok(ok, msg);
 });
 
 test('a lineage lost before the reunion ends the run with a clear result', () => {
   for (const s of seeds) {
     const r = playLineages(s, 'none');
     assert.ok(['done', 'lost', 'extinct'].includes(r.challenge.outcome));
-    if (r.challenge.outcome === 'lost') assert.equal(r.stars.count, 0);
+    if (r.challenge.outcome === 'lost') { assert.equal(r.stars.count, 0); assert.ok(r.challenge.result.t < 480); }
   }
+});
+
+test('the forecast reader beats doing nothing on the same seeds', () => {
+  const a = cachedTally('sidePlanner', seeds), n = cachedTally('none', seeds);
+  assert.ok(a.alive >= n.alive + 3, `planner ${a.alive} vs nothing ${n.alive} of ${seeds.length}`);
 });
 
 test('same seed, same run', () => {

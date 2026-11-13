@@ -7,12 +7,20 @@ import { Challenge, track } from './challenge.js';
 import { IslandSim, speciesLabel } from './islands.js';
 import { composition, alleleFreq, allelesPresent, meanHeterozygosity } from './history.js';
 
+// Balance constants (tuned with the benchmark players in tests/helpers.lineages.mjs; targets in spec 11.3).
+// The `LIN` block is handed to IslandSim (`islands.lin`): it is the only place Two Lineages differs from the Islands lab's rules.
 export const L = {
-  SECONDS: 600, START_POP: 24, FREQ: { b: 0.15, e: 0.15, T: 0.15 }, FOOD: [50, 40, 10], SUB_RATE: 0.11,
-  FOX_W: [4, 6, 6], FOX_E: [4, 6], WINTER: -0.7, WINTER2: -0.85, HEAT: 0.8, HEAT2: 0.85,
+  SECONDS: 600, START_POP: 26, FREQ: { b: 0.18, e: 0.13, T: 0.2 }, FOOD: [50, 40, 10], SUB_RATE: 0.11,
+  FOX_W: [6, 6, 6], FOX_E: [3, 5], WINTER: -0.58, WINTER2: -0.71, HEAT: 0.96, HEAT2: 0.84,
   SPLIT: 90, PREDICT: 450, REJOIN: 480,
-  CARRY_COST: 6, CARRY_COOLDOWN: 3, TEST_COST: 1, FENCE_COOLDOWN: 6, FENCE_GENS: 5,
+  CARRY_COST: 6, CARRY_COOLDOWN: 3, TEST_COST: 1, FENCE_COOLDOWN: 10, FENCE_GENS: 9,
   STAR_MIN: 6, STAR_POP: 30,
+  COST: { clover: 3, shelter: 3, fence: 8 },
+  LIN: {
+    kit0: 0.46, kitSlope: 2.2,          // litter size follows food per head, so a bank sits near what its land feeds instead of boom-and-bust
+    coldX: 2.4, heatX: 1.26,            // a hard spell is lethal to the mismatched phenotype (long ears in the cold, short ears in the heat)
+    fence: 0.48, shelter: 0.7, cloverR: 16, shelterR: 20, cloverGens: 5, shelterGens: 6, clover: 45,   // tools strong enough that timing them from the forecast saves a bank
+  },
 };
 
 export class LineagesChallenge extends Challenge {
@@ -91,7 +99,7 @@ export class LineagesChallenge extends Challenge {
 
   get timeLeft() { return Math.max(0, L.SECONDS - this.sim.t); }
   get outcome() { return this.sim.extinct ? 'extinct' : this.result?.outcome || null; }
-  costOf(action) { return action === 'carry' ? L.CARRY_COST : action === 'testcross' ? L.TEST_COST : P.COST[action]; }
+  costOf(action) { return action === 'carry' ? L.CARRY_COST : action === 'testcross' ? L.TEST_COST : L.COST[action] ?? P.COST[action]; }
   cooldown(action, side = 0) {
     if (action === 'carry') return Math.max(0, this.lastCarry + L.CARRY_COOLDOWN - this.sim.gen);
     if (action === 'fence') return Math.max(0, this.fenceLast[side] + L.FENCE_COOLDOWN - this.sim.gen);
@@ -155,7 +163,7 @@ export function createLineages(opts = {}) {
   const seedProbe = new IslandSim({ seedCode: opts.seedCode, mode: 'survive', startPop: 0 });   // only to read the seed
   const rng = new RNG((seedProbe.seed ^ 0x6c8e9cf5) >>> 0);
   const founders = Array.from({ length: L.START_POP }, () => drawGenotype(L.FREQ, rng));
-  const sim = new IslandSim({ ...opts, seedCode: seedProbe.seedCode, mode: 'survive', founders, islands: { scenario: 'open', food: L.FOOD, subRate: L.SUB_RATE },
+  const sim = new IslandSim({ ...opts, seedCode: seedProbe.seedCode, mode: 'survive', founders, islands: { scenario: 'open', food: L.FOOD, subRate: L.SUB_RATE, lin: { ...L.LIN } },
     setup: (s) => { challenge = new LineagesChallenge(s); } });
   return { sim, challenge };
 }

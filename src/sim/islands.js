@@ -68,6 +68,7 @@ export class IslandSim extends Simulation {
     this.crng = new RNG((this.seed ^ 0x3C6EF372) >>> 0);   // clock, hidden gametes, hybrid draws, heal picks
     this.xrng = new RNG((this.seed ^ 0x7F4A7C15) >>> 0);   // test crosses only: measuring never changes the run
     const lab = I.LAB;
+    this.lin = islands.lin || null;   // Two Lineages tuning (lineages.js): left null, the lab and every classic mode behave exactly as before
     if (this.mode !== 'survive') {
       this.cfg.kitsFixed = null; this.cfg.dominance = { ...(opts.dominance || DOM_SURVIVE) };
       this.cfg.mutationRate = opts.mutationRate ?? lab.mutationRate;
@@ -254,7 +255,7 @@ export class IslandSim extends Simulation {
     const added = [], was = this.predators.length;
     for (const reg of this.isl.regions) {
       const fence = this.gen < reg.fenceUntil || this.gen < this.fenceUntil;
-      const target = Math.max(0, Math.round(reg.env.predators * (fence ? 0.5 : 1)));
+      const target = Math.max(0, Math.round(reg.env.predators * (fence ? (this.lin?.fence ?? 0.5) : 1)));
       const mine = this.predators.filter((p) => p.region === reg.id);
       for (let k = mine.length; k < target; k++) {
         const c = REGION_CENTRE[reg.id], a = Math.atan2(c.z, c.x) + this.mrng.range(-0.5, 0.5);
@@ -282,6 +283,34 @@ export class IslandSim extends Simulation {
       clovers: this.cloverCrowd().filter((c) => c.n > 0 && regionOf(c.p.x, c.p.z) === reg),
       c: food / Math.max(sumA, 1e-6),
     };
+  }
+
+  // Two Lineages: patches can cover more ground (this.lin.cloverR / shelterR), so one patch can serve a whole bank.
+  addPatch(type, x, z) {
+    const p = super.addPatch(type, x, z);
+    if (this.lin) { p.radius = type === 'clover' ? this.lin.cloverR : this.lin.shelterR; p.expiresGen = this.gen + 1 + (type === 'clover' ? this.lin.cloverGens : this.lin.shelterGens); }
+    return p;
+  }
+
+  // Per-generation death chances. Only the Two Lineages challenge (this.lin) changes them: spells can hit harder, and the
+  // ranger tools can be stronger. Without this.lin it is exactly the classic rule.
+  hazardsFor(r, X) {
+    const k = this.lin;
+    if (!k) return super.hazardsFor(r, X);
+    const ph = r.pheno;
+    let pPred = X.pp * (ph.white ? X.camoW : X.camoB) * (ph.longEars ? P.EARS_PRED : 1);
+    if (pPred > 0) for (const s of X.shelters) if (dist2(r.x, r.z, s.x, s.z) < s.radius * s.radius) { pPred *= 1 - k.shelter; break; }
+    let pCold = 0, pHeat = 0;
+    if (X.temp < 0) pCold = (ph.longEars ? P.COLD_LONG : P.COLD_SHORT) * -X.temp * k.coldX;
+    else if (X.temp > 0) pHeat = (ph.longEars ? P.HEAT_LONG : P.HEAT_SHORT) * X.temp * k.heatX;
+    // brush also gives shade and a windbreak
+    if (pCold + pHeat > 0) for (const s of X.shelters) if (dist2(r.x, r.z, s.x, s.z) < s.radius * s.radius) { pCold *= 1 - k.shelter; pHeat *= 1 - k.shelter; break; }
+    const a = ph.longTeeth ? 1 : 1 - P.TOUGH_PENALTY * X.tough;
+    const D = ph.longTeeth ? 1 + P.TEETH_COST : 1;
+    let intake = a * Math.min(1, X.c / D);
+    for (const cl of X.clovers) if (dist2(r.x, r.z, cl.p.x, cl.p.z) < cl.p.radius * cl.p.radius) intake += Math.min(1, k.clover / cl.n) / D;
+    const pStarve = clamp(P.STARVE_K * (1 - Math.min(1, intake)), 0, 0.95);
+    return [Math.min(0.95, pPred), Math.min(0.95, pCold), Math.min(0.95, pHeat), pStarve];
   }
 
   scheduleHazards() {
@@ -337,11 +366,11 @@ export class IslandSim extends Simulation {
       const ceiling = pop.regions.reduce((s, i) => s + I.CAP_SHARE[i], 0);
       let count = members.length;
       this.rng.shuffle(adults);
-      const food = pop.regions.reduce((s, i) => s + S.regions[i].env.food, 0) + this.cloverCrowd().filter((c) => pop.regions.includes(regionOf(c.p.x, c.p.z))).reduce((s, c) => s + Math.min(P.CLOVER_FOOD, c.n), 0);
+      const food = pop.regions.reduce((s, i) => s + S.regions[i].env.food, 0) + this.cloverCrowd().filter((c) => pop.regions.includes(regionOf(c.p.x, c.p.z))).reduce((s, c) => s + Math.min(this.lin?.clover ?? P.CLOVER_FOOD, c.n), 0);
       const q = clamp((food / Math.max(1, members.length) - 0.5) / 1, 0, 1);
       for (let i = 0; i + 1 < adults.length; i += 2) {
         const A = adults[i], B = adults[i + 1];
-        const kits = this.cfg.kitsFixed ?? Math.min(P.KITS_MAX, P.KITS_MIN + Math.floor((P.KITS_MAX - P.KITS_MIN) * q + this.rng.next()));
+        const kits = this.lin ? this._linKits(food, members.length) : this.cfg.kitsFixed ?? Math.min(P.KITS_MAX, P.KITS_MIN + Math.floor((P.KITS_MAX - P.KITS_MIN) * q + this.rng.next()));
         const crossKit = (A.org & B.org) === 0;
         for (let k = 0; k < kits; k++) {
           if (count >= ceiling || this.liveN >= P.CAP) break;
@@ -364,6 +393,12 @@ export class IslandSim extends Simulation {
       }
     }
     return births;
+  }
+  // Two Lineages: litter size follows the food each rabbit has, so a bank settles near what its land feeds instead of
+  // overshooting and crashing. Fractional litters are rounded on the same stream as the classic rule.
+  _linKits(food, n) {
+    const k = this.lin, x = clamp(k.kit0 + k.kitSlope * (food / Math.max(1, n) - 1), 0, P.KITS_MAX);
+    return Math.floor(x + this.rng.next());
   }
   _tallyKit(crossKit, born, fertile) {
     const S = this.isl.stats, R = this.isl.reunion;
