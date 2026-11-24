@@ -351,3 +351,6 @@ body.big-text .toast { font-size: 1.05rem; }
 .predict-card { position: fixed; inset: 0; z-index: 60; overflow: auto; padding: 24px 16px; }
 .predict-card .pick.on { outline: 4px solid var(--gold); }
 .predict-card textarea { width: 100%; border: 2px solid var(--ink); border-radius: 8px; padding: 8px; margin: 10px 0; background: #fff; }
+
+/* keep the seed badge clear of the shared Learning Hub pill (bottom-right) */
+#seed-badge { bottom: 64px; }
